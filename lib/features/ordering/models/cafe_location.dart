@@ -1,9 +1,18 @@
-/// A physical branch shown in Home's "Our Locations" section. Kept simple
-/// on purpose — no live distance/geolocation, since that would need a paid
-/// maps API. Just what the Dashboard would actually manage: name + address.
+/// A physical branch managed by the Restaurant Dashboard.
 class CafeLocation {
   final String name;
   final String address;
+  final String mapUrl;
+  final double? latitude;
+  final double? longitude;
 
-  const CafeLocation({required this.name, required this.address});
+  const CafeLocation({
+    required this.name,
+    required this.address,
+    this.mapUrl = '',
+    this.latitude,
+    this.longitude,
+  });
+
+  bool get hasMapLink => mapUrl.trim().isNotEmpty;
 }
