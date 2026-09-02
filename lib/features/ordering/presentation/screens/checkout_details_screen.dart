@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/utils/currency_formatter.dart';
+import '../../data/order_metadata_repository.dart';
 import '../../models/cafe_location.dart';
 import '../../models/customer_info.dart';
 import '../../models/experience_settings.dart';
@@ -21,6 +22,7 @@ class CheckoutDetailsScreen extends StatefulWidget {
 
 class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _metadataRepository = OrderMetadataRepository();
   late final TextEditingController _nameController;
   late final TextEditingController _phoneController;
   late final TextEditingController _addressController;
@@ -41,8 +43,7 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
     _notesController = TextEditingController(text: previous?.notes ?? '');
     _paymentMethod = previous?.paymentMethod ?? PaymentMethod.cash;
     _deliveryType = previous?.deliveryType ?? DeliveryType.delivery;
-    _pickupBranch = previous?.pickupBranch ??
-        (controller.locations.isNotEmpty ? controller.locations.first.name : null);
+    _pickupBranch = previous?.pickupBranch ?? (controller.locations.isNotEmpty ? controller.locations.first.name : null);
     _scheduledFor = previous?.scheduledFor;
   }
 
@@ -58,7 +59,6 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Consumer<OrderingController>(
       builder: (context, controller, _) {
         final totals = controller.cartTotals;
@@ -70,19 +70,13 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
         final scheduledEnabled = settings.acceptsScheduledOrders && !closed;
 
         if (!deliveryEnabled && _deliveryType == DeliveryType.delivery && pickupEnabled) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _deliveryType = DeliveryType.pickup);
-          });
+          WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _deliveryType = DeliveryType.pickup); });
         }
         if (!pickupEnabled && _deliveryType == DeliveryType.pickup && deliveryEnabled) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _deliveryType = DeliveryType.delivery);
-          });
+          WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _deliveryType = DeliveryType.delivery); });
         }
         if (!scheduledEnabled && _scheduledFor != null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _scheduledFor = null);
-          });
+          WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _scheduledFor = null); });
         }
 
         return Scaffold(
@@ -94,61 +88,26 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
                 padding: const EdgeInsets.all(24),
                 children: [
                   if (closed) ...[
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.errorContainer,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Text(
-                        settings.closureMessage.isNotEmpty
-                            ? settings.closureMessage
-                            : 'We are not accepting orders right now.',
-                        style: TextStyle(color: theme.colorScheme.onErrorContainer),
-                      ),
-                    ),
+                    Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: theme.colorScheme.errorContainer, borderRadius: BorderRadius.circular(16)), child: Text(settings.closureMessage.isNotEmpty ? settings.closureMessage : 'We are not accepting orders right now.', style: TextStyle(color: theme.colorScheme.onErrorContainer))),
                     const SizedBox(height: 20),
                   ],
                   Text('Contact', style: theme.textTheme.titleLarge),
                   const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(labelText: 'Full name'),
-                    textCapitalization: TextCapitalization.words,
-                    validator: (value) => (value == null || value.trim().isEmpty)
-                        ? 'Enter your name'
-                        : null,
-                  ),
+                  TextFormField(controller: _nameController, decoration: const InputDecoration(labelText: 'Full name'), textCapitalization: TextCapitalization.words, validator: (value) => (value == null || value.trim().isEmpty) ? 'Enter your name' : null),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _phoneController,
-                    decoration: const InputDecoration(labelText: 'Phone number'),
-                    keyboardType: TextInputType.phone,
-                    validator: (value) => (value == null || value.trim().isEmpty)
-                        ? 'Enter your phone number'
-                        : null,
-                  ),
+                  TextFormField(controller: _phoneController, decoration: const InputDecoration(labelText: 'Phone number'), keyboardType: TextInputType.phone, validator: (value) => (value == null || value.trim().isEmpty) ? 'Enter your phone number' : null),
                   if (deliveryEnabled || pickupEnabled) ...[
                     const SizedBox(height: 28),
                     Text('Order Type', style: theme.textTheme.titleLarge),
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        if (deliveryEnabled)
-                          Expanded(child: SelectableOptionTile(label: 'Delivery', icon: Icons.delivery_dining_outlined, isSelected: _deliveryType == DeliveryType.delivery, onTap: () => setState(() => _deliveryType = DeliveryType.delivery))),
-                        if (deliveryEnabled && pickupEnabled) const SizedBox(width: 12),
-                        if (pickupEnabled)
-                          Expanded(child: SelectableOptionTile(label: 'Pickup', icon: Icons.storefront_outlined, isSelected: _deliveryType == DeliveryType.pickup, onTap: () => setState(() => _deliveryType = DeliveryType.pickup))),
-                      ],
-                    ),
+                    Row(children: [
+                      if (deliveryEnabled) Expanded(child: SelectableOptionTile(label: 'Delivery', icon: Icons.delivery_dining_outlined, isSelected: _deliveryType == DeliveryType.delivery, onTap: () => setState(() => _deliveryType = DeliveryType.delivery))),
+                      if (deliveryEnabled && pickupEnabled) const SizedBox(width: 12),
+                      if (pickupEnabled) Expanded(child: SelectableOptionTile(label: 'Pickup', icon: Icons.storefront_outlined, isSelected: _deliveryType == DeliveryType.pickup, onTap: () => setState(() => _deliveryType = DeliveryType.pickup))),
+                    ]),
                     const SizedBox(height: 16),
                     if (_deliveryType == DeliveryType.delivery)
-                      TextFormField(
-                        controller: _addressController,
-                        decoration: const InputDecoration(labelText: 'Delivery address'),
-                        maxLines: 2,
-                        validator: (value) => (value == null || value.trim().isEmpty) ? 'Enter a delivery address' : null,
-                      )
+                      TextFormField(controller: _addressController, decoration: const InputDecoration(labelText: 'Delivery address'), maxLines: 2, validator: (value) => (value == null || value.trim().isEmpty) ? 'Enter a delivery address' : null)
                     else
                       _BranchPicker(locations: controller.locations, selected: _pickupBranch, onSelected: (name) => setState(() => _pickupBranch = name)),
                   ],
@@ -156,35 +115,21 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
                     const SizedBox(height: 28),
                     Text('Order Time', style: theme.textTheme.titleLarge),
                     const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.schedule_outlined),
-                      label: Text(_scheduledFor == null ? 'Order now' : 'Scheduled: ${_formatDateTime(_scheduledFor!)}'),
-                      onPressed: () => _pickSchedule(settings),
-                    ),
-                    if (_scheduledFor != null)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(onPressed: () => setState(() => _scheduledFor = null), child: const Text('Clear schedule')),
-                      ),
+                    OutlinedButton.icon(icon: const Icon(Icons.schedule_outlined), label: Text(_scheduledFor == null ? 'Order now' : 'Scheduled: ${_formatDateTime(_scheduledFor!)}'), onPressed: () => _pickSchedule(settings)),
+                    if (_scheduledFor != null) Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => setState(() => _scheduledFor = null), child: const Text('Clear schedule'))),
                   ],
                   if (settings.customerNotesEnabled) ...[
                     const SizedBox(height: 20),
-                    TextField(
-                      controller: _notesController,
-                      maxLines: 3,
-                      decoration: const InputDecoration(labelText: 'Order notes', hintText: 'Anything we should know?'),
-                    ),
+                    TextField(controller: _notesController, maxLines: 3, decoration: const InputDecoration(labelText: 'Order notes', hintText: 'Anything we should know?')),
                   ],
                   const SizedBox(height: 28),
                   Text('Payment Method', style: theme.textTheme.titleLarge),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(child: SelectableOptionTile(label: 'Cash', icon: Icons.payments_outlined, isSelected: _paymentMethod == PaymentMethod.cash, onTap: () => setState(() => _paymentMethod = PaymentMethod.cash))),
-                      const SizedBox(width: 12),
-                      Expanded(child: SelectableOptionTile(label: 'Visa', icon: Icons.credit_card, isSelected: _paymentMethod == PaymentMethod.visa, onTap: () => setState(() => _paymentMethod = PaymentMethod.visa))),
-                    ],
-                  ),
+                  Row(children: [
+                    Expanded(child: SelectableOptionTile(label: 'Cash', icon: Icons.payments_outlined, isSelected: _paymentMethod == PaymentMethod.cash, onTap: () => setState(() => _paymentMethod = PaymentMethod.cash))),
+                    const SizedBox(width: 12),
+                    Expanded(child: SelectableOptionTile(label: 'Visa', icon: Icons.credit_card, isSelected: _paymentMethod == PaymentMethod.visa, onTap: () => setState(() => _paymentMethod = PaymentMethod.visa))),
+                  ]),
                   const SizedBox(height: 32),
                   _SummaryRow(label: 'Subtotal', value: CurrencyFormatter.format(totals.subtotal, settings.currency)),
                   const SizedBox(height: 8),
@@ -196,11 +141,7 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
                     Text('Minimum order: ${CurrencyFormatter.format(settings.minOrderAmount, settings.currency)}', style: TextStyle(color: theme.colorScheme.error)),
                   ],
                   const SizedBox(height: 20),
-                  AnimatedActionButton(
-                    status: _mapCheckout(controller.checkoutStatus),
-                    idleLabel: _paymentMethod == PaymentMethod.visa ? 'Continue to Payment' : 'Place Order',
-                    onPressed: closed || !minimumReached ? null : _submit,
-                  ),
+                  AnimatedActionButton(status: _mapCheckout(controller.checkoutStatus), idleLabel: _paymentMethod == PaymentMethod.visa ? 'Continue to Payment' : 'Place Order', onPressed: closed || !minimumReached ? null : _submit),
                 ],
               ),
             ),
@@ -215,10 +156,8 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
     final maxDate = now.add(Duration(days: settings.scheduledOrderMaxDays));
     final date = await showDatePicker(context: context, firstDate: now, lastDate: maxDate, initialDate: _scheduledFor ?? now);
     if (date == null || !mounted) return;
-
     final time = await showTimePicker(context: context, initialTime: _scheduledFor != null ? TimeOfDay.fromDateTime(_scheduledFor!) : TimeOfDay.fromDateTime(now.add(Duration(minutes: settings.preparationTimeMinutes))));
     if (time == null || !mounted) return;
-
     final selected = DateTime(date.year, date.month, date.day, time.hour, time.minute);
     if (selected.isBefore(now.add(Duration(minutes: settings.preparationTimeMinutes)))) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please choose a time after the preparation window.')));
@@ -233,24 +172,10 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
     final controller = context.read<OrderingController>();
     final settings = controller.settings;
     final totals = controller.cartTotals;
-
-    if (settings.operationalStatus != RestaurantOperationalStatus.open) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(settings.closureMessage.isNotEmpty ? settings.closureMessage : 'Orders are currently closed.')));
-      return;
-    }
-    if (totals.subtotal < settings.minOrderAmount) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Minimum order is ${CurrencyFormatter.format(settings.minOrderAmount, settings.currency)}')));
-      return;
-    }
+    if (settings.operationalStatus != RestaurantOperationalStatus.open) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(settings.closureMessage.isNotEmpty ? settings.closureMessage : 'Orders are currently closed.'))); return; }
+    if (totals.subtotal < settings.minOrderAmount) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Minimum order is ${CurrencyFormatter.format(settings.minOrderAmount, settings.currency)}'))); return; }
     if (!_formKey.currentState!.validate()) return;
-    if (_deliveryType == DeliveryType.pickup && _pickupBranch == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Choose a branch for pickup')));
-      return;
-    }
-    if (_scheduledFor != null && !settings.acceptsScheduledOrders) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Scheduled orders are currently disabled.')));
-      return;
-    }
+    if (_deliveryType == DeliveryType.pickup && _pickupBranch == null) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Choose a branch for pickup'))); return; }
 
     final info = CustomerInfo(
       name: _nameController.text.trim(),
@@ -274,15 +199,22 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(controller.checkoutError ?? 'Could not place your order. Please try again.')));
       return;
     }
+
+    final orderId = controller.orderHistory.isNotEmpty ? controller.orderHistory.first.id : null;
+    if (orderId != null) {
+      try {
+        await _metadataRepository.save(orderId: orderId, notes: info.notes, scheduledFor: info.scheduledFor);
+        await controller.loadOrderHistory();
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Order placed, but order details could not be saved: $e')));
+      }
+    }
+
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReceiptScreen()));
   }
 
   ActionButtonStatus _mapCheckout(CheckoutStatus status) {
-    switch (status) {
-      case CheckoutStatus.processing: return ActionButtonStatus.processing;
-      case CheckoutStatus.success: return ActionButtonStatus.success;
-      case CheckoutStatus.idle: return ActionButtonStatus.idle;
-    }
+    switch (status) { case CheckoutStatus.processing: return ActionButtonStatus.processing; case CheckoutStatus.success: return ActionButtonStatus.success; case CheckoutStatus.idle: return ActionButtonStatus.idle; }
   }
 }
 
@@ -292,10 +224,7 @@ class _SummaryRow extends StatelessWidget {
   final String value;
   final bool emphasized;
   @override
-  Widget build(BuildContext context) {
-    final style = emphasized ? Theme.of(context).textTheme.titleLarge : Theme.of(context).textTheme.bodyLarge;
-    return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: style), Text(value, style: style)]);
-  }
+  Widget build(BuildContext context) { final style = emphasized ? Theme.of(context).textTheme.titleLarge : Theme.of(context).textTheme.bodyLarge; return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: style), Text(value, style: style)]); }
 }
 
 class _BranchPicker extends StatelessWidget {
@@ -309,25 +238,7 @@ class _BranchPicker extends StatelessWidget {
     if (locations.isEmpty) return Text('No branches available yet.', style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)));
     return Column(children: locations.map<Widget>((location) {
       final isSelected = location.name == selected;
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: GestureDetector(
-          onTap: () => onSelected(location.name),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: isSelected ? theme.colorScheme.primary : theme.cardColor, borderRadius: BorderRadius.circular(14), border: Border.all(color: isSelected ? theme.colorScheme.primary : theme.dividerColor)),
-            child: Row(children: [
-              Icon(isSelected ? Icons.check_circle : Icons.storefront_outlined, color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.primary),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(location.name, style: TextStyle(color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, fontWeight: FontWeight.w600)),
-                Text(location.address, style: TextStyle(color: isSelected ? theme.colorScheme.onPrimary.withValues(alpha: 0.7) : theme.colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 12)),
-              ])),
-            ]),
-          ),
-        ),
-      );
+      return Padding(padding: const EdgeInsets.only(bottom: 10), child: GestureDetector(onTap: () => onSelected(location.name), child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: isSelected ? theme.colorScheme.primary : theme.cardColor, borderRadius: BorderRadius.circular(14), border: Border.all(color: isSelected ? theme.colorScheme.primary : theme.dividerColor)), child: Row(children: [Icon(isSelected ? Icons.check_circle : Icons.storefront_outlined, color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.primary), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(location.name, style: TextStyle(color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, fontWeight: FontWeight.w600)), Text(location.address, style: TextStyle(color: isSelected ? theme.colorScheme.onPrimary.withValues(alpha: 0.7) : theme.colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 12))]))]))));
     }).toList());
   }
 }
