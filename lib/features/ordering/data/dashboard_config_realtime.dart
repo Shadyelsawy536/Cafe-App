@@ -8,21 +8,25 @@ import '../models/branding.dart';
 import '../models/cafe_location.dart';
 import '../models/experience_settings.dart';
 import 'product_repository.dart';
-import '../presentation/controllers/ordering_controller.dart';
 
-/// Keeps customer-facing configuration in sync with the Restaurant Dashboard.
-///
-/// Realtime events are treated as invalidation signals; the canonical state is
-/// always re-fetched through the normal repository/RLS path.
+/// Keeps customer-facing dashboard configuration synchronized with Supabase.
+/// Realtime events are treated as invalidation signals; the repository then
+/// re-fetches the canonical state through the normal RLS-protected path.
 class DashboardConfigRealtime {
   DashboardConfigRealtime({
     required ProductRepository repository,
-    required OrderingController controller,
+    required ValueChanged<ExperienceSettings> onSettings,
+    required ValueChanged<Branding> onBranding,
+    required ValueChanged<List<CafeLocation>> onLocations,
   })  : _repository = repository,
-        _controller = controller;
+        _onSettings = onSettings,
+        _onBranding = onBranding,
+        _onLocations = onLocations;
 
   final ProductRepository _repository;
-  final OrderingController _controller;
+  final ValueChanged<ExperienceSettings> _onSettings;
+  final ValueChanged<Branding> _onBranding;
+  final ValueChanged<List<CafeLocation>> _onLocations;
   final SupabaseClient _client = Supabase.instance.client;
 
   RealtimeChannel? _channel;
@@ -32,17 +36,22 @@ class DashboardConfigRealtime {
     if (_started) return;
     _started = true;
 
-    final channelName =
-        'cafe-config-${TenantConfig.restaurantId}-${DateTime.now().microsecondsSinceEpoch}';
-    final channel = _client.channel(channelName);
+    final channel = _client.channel(
+      'cafe-dashboard-config-${TenantConfig.restaurantId}',
+    );
     _channel = channel;
 
     channel.onPostgresChanges(
       event: PostgresChangeEvent.all,
       schema: 'public',
       table: 'restaurant_settings',
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'restaurant_id',
+        value: TenantConfig.restaurantId,
+      ),
       callback: (payload) {
-        debugPrint('REALTIME CONFIG: restaurant_settings ${payload.eventType}');
+        debugPrint('REALTIME CONFIG: settings ${payload.eventType}');
         unawaited(_reloadSettings());
       },
     );
@@ -51,8 +60,13 @@ class DashboardConfigRealtime {
       event: PostgresChangeEvent.all,
       schema: 'public',
       table: 'restaurant_branding',
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'restaurant_id',
+        value: TenantConfig.restaurantId,
+      ),
       callback: (payload) {
-        debugPrint('REALTIME CONFIG: restaurant_branding ${payload.eventType}');
+        debugPrint('REALTIME CONFIG: branding ${payload.eventType}');
         unawaited(_reloadBranding());
       },
     );
@@ -61,8 +75,13 @@ class DashboardConfigRealtime {
       event: PostgresChangeEvent.all,
       schema: 'public',
       table: 'restaurant_locations',
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'restaurant_id',
+        value: TenantConfig.restaurantId,
+      ),
       callback: (payload) {
-        debugPrint('REALTIME CONFIG: restaurant_locations ${payload.eventType}');
+        debugPrint('REALTIME CONFIG: locations ${payload.eventType}');
         unawaited(_reloadLocations());
       },
     );
@@ -80,10 +99,7 @@ class DashboardConfigRealtime {
 
   Future<void> _reloadSettings() async {
     try {
-      final fresh = await _repository.fetchSettings();
-      _controller.settings = fresh;
-      _controller.notifyListeners();
-      debugPrint('REALTIME CONFIG: settings refreshed');
+      _onSettings(await _repository.fetchSettings());
     } catch (e) {
       debugPrint('REALTIME CONFIG: settings refresh failed: $e');
     }
@@ -91,10 +107,7 @@ class DashboardConfigRealtime {
 
   Future<void> _reloadBranding() async {
     try {
-      final fresh = await _repository.fetchBranding();
-      _controller.branding = fresh;
-      _controller.notifyListeners();
-      debugPrint('REALTIME CONFIG: branding refreshed');
+      _onBranding(await _repository.fetchBranding());
     } catch (e) {
       debugPrint('REALTIME CONFIG: branding refresh failed: $e');
     }
@@ -102,10 +115,7 @@ class DashboardConfigRealtime {
 
   Future<void> _reloadLocations() async {
     try {
-      final fresh = await _repository.fetchLocations();
-      _controller.locations = fresh;
-      _controller.notifyListeners();
-      debugPrint('REALTIME CONFIG: locations refreshed (${fresh.length})');
+      _onLocations(await _repository.fetchLocations());
     } catch (e) {
       debugPrint('REALTIME CONFIG: locations refresh failed: $e');
     }
@@ -115,7 +125,6 @@ class DashboardConfigRealtime {
     final channel = _channel;
     _channel = null;
     _started = false;
-
     if (channel != null) {
       await _client.removeChannel(channel);
     }
