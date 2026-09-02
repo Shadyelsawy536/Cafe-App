@@ -115,7 +115,7 @@ class SupabaseProductRepository implements ProductRepository {
   @override
   Future<List<CafeLocation>> fetchLocations() async {
     final rows = await _client.from('restaurant_locations').select('''
-          id, name, map_url, address, latitude, longitude, is_primary, sort_order
+          id, name, address, map_url, latitude, longitude, is_primary, sort_order
         ''').eq('restaurant_id', TenantConfig.restaurantId)
         .eq('is_active', true).order('sort_order');
 
