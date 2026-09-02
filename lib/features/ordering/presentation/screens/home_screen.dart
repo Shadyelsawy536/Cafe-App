@@ -375,12 +375,11 @@ class _LocationTile extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(location.address, style: theme.textTheme.bodyMedium?.copyWith(fontSize: 12)),
                     ],
-                    if (location.hasMapLink)
-                      Text('Open in Google Maps', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.primary)),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
+              if (location.hasMapLink)
+                Icon(Icons.chevron_right, color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
             ],
           ),
         ),
