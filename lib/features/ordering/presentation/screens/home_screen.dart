@@ -1,23 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/animations/route_transitions.dart';
+import '../../../../core/config/tenant_config.dart';
+import '../../../../core/utils/currency_formatter.dart';
 import '../../models/cafe_location.dart';
 import '../../models/product.dart';
 import '../../models/promotion.dart';
+import '../../models/restaurant_social_link.dart';
 import '../controllers/ordering_controller.dart';
 import '../widgets/product_image.dart';
 import 'product_details_screen.dart';
 
-/// Home is the discovery/marketing landing page — welcome message, search,
-/// a featured promo banner, branch locations, and social links. The full
-/// categorized catalog lives on the Menu tab; search here is for jumping
-/// straight to a known product by name.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.onExploreMenu});
 
-  /// Lets "Discover more" jump to the Menu tab without this screen needing
-  /// to know how the bottom nav is implemented.
   final VoidCallback? onExploreMenu;
 
   @override
@@ -27,11 +26,93 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  List<RestaurantSocialLink> _socialLinks = const [];
+  RealtimeChannel? _socialChannel;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSocialLinks();
+    _subscribeToSocialLinks();
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    final channel = _socialChannel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
     super.dispose();
+  }
+
+  Future<void> _loadSocialLinks() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('restaurant_social_links')
+          .select('platform, label, url')
+          .eq('restaurant_id', TenantConfig.restaurantId)
+          .eq('is_active', true)
+          .order('sort_order');
+      if (!mounted) return;
+      setState(() {
+        _socialLinks = (rows as List<dynamic>)
+            .map((row) => RestaurantSocialLink.fromJson(
+                  Map<String, dynamic>.from(row as Map),
+                ))
+            .where((link) => link.url.isNotEmpty)
+            .toList();
+      });
+    } catch (e) {
+      debugPrint('SOCIAL LINKS: load failed: $e');
+    }
+  }
+
+  void _subscribeToSocialLinks() {
+    final channel = Supabase.instance.client.channel(
+      'cafe-social-links-${TenantConfig.restaurantId}',
+    );
+    _socialChannel = channel;
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'restaurant_social_links',
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'restaurant_id',
+        value: TenantConfig.restaurantId,
+      ),
+      callback: (_) => _loadSocialLinks(),
+    );
+    channel.subscribe((status, error) {
+      debugPrint('SOCIAL LINKS REALTIME: $status${error == null ? '' : ' $error'}');
+    });
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This link is not valid.')),
+      );
+      return;
+    }
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open this link.')),
+        );
+      }
+    } catch (e) {
+      debugPrint('URL LAUNCH: failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open this link.')),
+        );
+      }
+    }
   }
 
   @override
@@ -45,7 +126,9 @@ class _HomeScreenState extends State<HomeScreen> {
         final theme = Theme.of(context);
         final name = controller.lastCustomerInfo?.name;
         final isSearching = _query.trim().isNotEmpty;
-        final results = isSearching ? _searchProducts(controller.products, _query) : const <Product>[];
+        final results = isSearching
+            ? _searchProducts(controller.products, _query)
+            : const <Product>[];
 
         return Scaffold(
           appBar: AppBar(title: const Text('Cafe')),
@@ -89,15 +172,27 @@ class _HomeScreenState extends State<HomeScreen> {
                   _SearchResults(results: results, query: _query)
                 else ...[
                   if (controller.promotion != null)
-                    _PromoCard(promotion: controller.promotion!, onTap: widget.onExploreMenu),
+                    _PromoCard(
+                      promotion: controller.promotion!,
+                      onTap: widget.onExploreMenu,
+                    ),
                   const SizedBox(height: 32),
                   Text('Our Locations', style: theme.textTheme.titleLarge),
                   const SizedBox(height: 12),
-                  ...controller.locations.map((location) => _LocationTile(location: location)),
+                  ...controller.locations.map(
+                    (location) => _LocationTile(
+                      location: location,
+                      onTap: location.hasMapLink ? () => _openUrl(location.mapUrl) : null,
+                    ),
+                  ),
+                  if (controller.locations.isEmpty)
+                    Text('No locations available.', style: theme.textTheme.bodyMedium),
                   const SizedBox(height: 32),
-                  Text('Follow Us', style: theme.textTheme.titleLarge),
-                  const SizedBox(height: 12),
-                  const _FollowUsRow(),
+                  if (_socialLinks.isNotEmpty) ...[
+                    Text('Follow Us', style: theme.textTheme.titleLarge),
+                    const SizedBox(height: 12),
+                    _FollowUsRow(links: _socialLinks, onOpen: _openUrl),
+                  ],
                 ],
               ],
             ),
@@ -110,8 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Product> _searchProducts(List<Product> products, String query) {
     final normalized = query.trim().toLowerCase();
     return products
-        .where((p) =>
-            p.name.toLowerCase().contains(normalized) ||
+        .where((p) => p.name.toLowerCase().contains(normalized) ||
             p.description.toLowerCase().contains(normalized) ||
             p.category.toLowerCase().contains(normalized))
         .toList();
@@ -127,16 +221,12 @@ class _SearchResults extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     if (results.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Center(
-          child: Text('No results for "$query"', style: theme.textTheme.bodyMedium),
-        ),
+        child: Center(child: Text('No results for "$query"')),
       );
     }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -151,13 +241,12 @@ class _SearchResults extends StatelessWidget {
 
 class _SearchResultTile extends StatelessWidget {
   const _SearchResultTile({required this.product});
-
   final Product product;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
+    final currency = context.watch<OrderingController>().settings.currency;
     return GestureDetector(
       onTap: () {
         context.read<OrderingController>().beginConfiguring(product);
@@ -166,10 +255,7 @@ class _SearchResultTile extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: theme.cardColor,
-          borderRadius: BorderRadius.circular(14),
-        ),
+        decoration: BoxDecoration(color: theme.cardColor, borderRadius: BorderRadius.circular(14)),
         child: Row(
           children: [
             ProductImage(imageUrl: product.imageUrl, width: 52, height: 52, borderRadius: 12),
@@ -184,7 +270,7 @@ class _SearchResultTile extends StatelessWidget {
               ),
             ),
             Text(
-              '€${product.basePrice.toStringAsFixed(2)}',
+              CurrencyFormatter.format(product.basePrice, currency),
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: theme.colorScheme.primary,
@@ -199,7 +285,6 @@ class _SearchResultTile extends StatelessWidget {
 
 class _PromoCard extends StatelessWidget {
   const _PromoCard({required this.promotion, this.onTap});
-
   final Promotion promotion;
   final VoidCallback? onTap;
 
@@ -211,13 +296,7 @@ class _PromoCard extends StatelessWidget {
         height: 200,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 20, offset: const Offset(0, 10))],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
@@ -225,9 +304,6 @@ class _PromoCard extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               ProductImage(imageUrl: promotion.imageUrl),
-              // White text here is deliberate regardless of app theme — this
-              // sits on the promo photo's own dark gradient overlay, not on
-              // the scaffold background.
               DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -244,36 +320,11 @@ class _PromoCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      promotion.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18,
-                      ),
-                    ),
+                    Text(promotion.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18)),
                     const SizedBox(height: 4),
-                    Text(
-                      promotion.subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
+                    Text(promotion.subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
                     const SizedBox(height: 8),
-                    const Row(
-                      children: [
-                        Text(
-                          'Discover more',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        SizedBox(width: 4),
-                        Icon(Icons.arrow_forward, color: Colors.white, size: 16),
-                      ],
-                    ),
+                    const Row(children: [Text('Discover more', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)), SizedBox(width: 4), Icon(Icons.arrow_forward, color: Colors.white, size: 16)]),
                   ],
                 ),
               ),
@@ -286,114 +337,104 @@ class _PromoCard extends StatelessWidget {
 }
 
 class _LocationTile extends StatelessWidget {
-  const _LocationTile({required this.location});
-
+  const _LocationTile({required this.location, this.onTap});
   final CafeLocation location;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: theme.brightness == Brightness.dark ? 0.3 : 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: theme.brightness == Brightness.dark ? 0.3 : 0.05), blurRadius: 12, offset: const Offset(0, 6))],
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(Icons.storefront_outlined, color: theme.colorScheme.primary),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(location.name, style: theme.textTheme.titleLarge?.copyWith(fontSize: 15)),
-                const SizedBox(height: 2),
-                Text(
-                  location.address,
-                  style: theme.textTheme.bodyMedium?.copyWith(fontSize: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(color: theme.colorScheme.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+                child: Icon(Icons.storefront_outlined, color: theme.colorScheme.primary),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(location.name, style: theme.textTheme.titleLarge?.copyWith(fontSize: 15)),
+                    if (location.address.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(location.address, style: theme.textTheme.bodyMedium?.copyWith(fontSize: 12)),
+                    ],
+                    if (location.hasMapLink)
+                      Text('Open in Google Maps', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.primary)),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              Icon(Icons.chevron_right, color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
+            ],
           ),
-          Icon(Icons.chevron_right, color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
-        ],
+        ),
       ),
     );
   }
 }
 
 class _FollowUsRow extends StatelessWidget {
-  const _FollowUsRow();
+  const _FollowUsRow({required this.links, required this.onOpen});
+  final List<RestaurantSocialLink> links;
+  final ValueChanged<String> onOpen;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    // Icons only for now — wiring real profile links is a small addition
-    // (the `url_launcher` package) once you have actual social accounts to
-    // point to and have added the platform config it needs.
-    //
-    // TikTok's brand color is monochrome (black/white), so unlike
-    // Instagram/Facebook's fixed brand colors, it needs to flip with the
-    // theme to stay visible — hence onSurface instead of a literal color.
-    final platforms = [
-      (label: 'Instagram', icon: Icons.camera_alt_outlined, color: const Color(0xFFE1306C)),
-      (label: 'Facebook', icon: Icons.facebook, color: const Color(0xFF1877F2)),
-      (label: 'TikTok', icon: Icons.music_note, color: theme.colorScheme.onSurface),
-    ];
-
     return Row(
-      children: platforms
-          .map(
-            (platform) => Expanded(
-              child: GestureDetector(
-                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Follow us on ${platform.label}')),
-                ),
-                child: Container(
-                  margin: const EdgeInsets.only(right: 10),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    color: platform.color.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    children: [
-                      Icon(platform.icon, color: platform.color),
-                      const SizedBox(height: 6),
-                      Text(
-                        platform.label,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: platform.color,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+      children: links.map((link) {
+        final platform = link.platform.toLowerCase();
+        final isInstagram = platform == 'instagram';
+        final isFacebook = platform == 'facebook';
+        final icon = isInstagram
+            ? Icons.camera_alt_outlined
+            : isFacebook
+                ? Icons.facebook
+                : Icons.music_note;
+        final color = isInstagram
+            ? const Color(0xFFE1306C)
+            : isFacebook
+                ? const Color(0xFF1877F2)
+                : theme.colorScheme.onSurface;
+        return Expanded(
+          child: GestureDetector(
+            onTap: () => onOpen(link.url),
+            child: Container(
+              margin: const EdgeInsets.only(right: 10),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(16)),
+              child: Column(
+                children: [
+                  Icon(icon, color: color),
+                  const SizedBox(height: 6),
+                  Text(link.label.isEmpty ? _title(platform) : link.label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+                ],
               ),
             ),
-          )
-          .toList(),
+          ),
+        );
+      }).toList(),
     );
+  }
+
+  String _title(String platform) {
+    if (platform.isEmpty) return 'Social';
+    return '${platform[0].toUpperCase()}${platform.substring(1)}';
   }
 }
