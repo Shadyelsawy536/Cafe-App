@@ -627,7 +627,10 @@ class OrderingController extends ChangeNotifier {
   }
 
   CartTotals get cartTotals =>
-      calculateCartTotals(cart);
+      calculateCartTotals(
+        cart,
+        taxRate: settings.taxRate,
+      );
 
   // =========================================================
   // CHECKOUT
@@ -718,6 +721,12 @@ class OrderingController extends ChangeNotifier {
                       PaymentMethod.cash
                   ? 'cash'
                   : 'visa',
+          'p_customer_notes':
+              customerInfo.notes,
+          'p_scheduled_for':
+              customerInfo.scheduledFor
+                  ?.toUtc()
+                  .toIso8601String(),
           'p_items': items,
         },
       ) as String;
