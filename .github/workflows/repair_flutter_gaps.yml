@@ -1,0 +1,329 @@
+name: Repair Flutter checkout and dashboard links
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch Flutter gaps
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          controller = Path('lib/features/ordering/presentation/controllers/ordering_controller.dart')
+          text = controller.read_text()
+
+          text = text.replace(
+              "import '../../data/product_repository.dart';\n",
+              "import '../../data/order_metadata_repository.dart';\nimport '../../data/product_repository.dart';\n",
+          )
+          text = text.replace(
+              "  final ProductRepository _repository;\n",
+              "  final ProductRepository _repository;\n  final OrderMetadataRepository _metadataRepository = OrderMetadataRepository();\n",
+          )
+          text = text.replace(
+              "  CartTotals get cartTotals =>\n      calculateCartTotals(cart);",
+              "  CartTotals get cartTotals =>\n      calculateCartTotals(cart, taxRate: settings.taxRate);",
+          )
+          old_params = """          'p_payment_method':
+              customerInfo.paymentMethod ==
+                      PaymentMethod.cash
+                  ? 'cash'
+                  : 'visa',
+          'p_items': items,
+"""
+          new_params = """          'p_payment_method':
+              customerInfo.paymentMethod ==
+                      PaymentMethod.cash
+                  ? 'cash'
+                  : 'visa',
+          'p_items': items,
+          'p_customer_notes': customerInfo.notes,
+          'p_scheduled_for': customerInfo.scheduledFor?.toUtc().toIso8601String(),
+"""
+          if old_params not in text:
+              raise SystemExit('checkout RPC parameter block not found')
+          text = text.replace(old_params, new_params, 1)
+          controller.write_text(text)
+
+          home = Path('lib/features/ordering/presentation/screens/home_screen.dart')
+          text = home.read_text()
+          text = text.replace(
+              "import 'package:provider/provider.dart';\n",
+              "import 'package:provider/provider.dart';\nimport 'package:supabase_flutter/supabase_flutter.dart';\nimport 'package:url_launcher/url_launcher.dart';\n\nimport '../../../../core/config/tenant_config.dart';\n",
+          )
+          text = text.replace(
+              "import '../../models/promotion.dart';\n",
+              "import '../../models/promotion.dart';\nimport '../../models/restaurant_social_link.dart';\n",
+          )
+          text = text.replace(
+              "  String _query = '';\n",
+              "  String _query = '';\n  List<RestaurantSocialLink> _socialLinks = const [];\n  RealtimeChannel? _socialChannel;\n",
+          )
+          text = text.replace(
+              "  @override\n  void dispose() {\n    _searchController.dispose();\n    super.dispose();\n  }",
+              """  @override
+  void initState() {
+    super.initState();
+    _loadSocialLinks();
+    _socialChannel = Supabase.instance.client
+        .channel('cafe-home-social-${TenantConfig.restaurantId}')
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'restaurant_social_links',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'restaurant_id',
+          value: TenantConfig.restaurantId,
+        ),
+        callback: (_) => _loadSocialLinks(),
+      )
+      ..subscribe();
+  }
+
+  Future<void> _loadSocialLinks() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('restaurant_social_links')
+          .select('platform, label, url')
+          .eq('restaurant_id', TenantConfig.restaurantId)
+          .eq('is_active', true)
+          .order('sort_order');
+      if (!mounted) return;
+      setState(() {
+        _socialLinks = (rows as List<dynamic>)
+            .map((row) => RestaurantSocialLink.fromJson(row as Map<String, dynamic>))
+            .where((link) => link.url.isNotEmpty)
+            .toList();
+      });
+    } catch (e) {
+      debugPrint('SOCIAL LINKS: load failed: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    final channel = _socialChannel;
+    _socialChannel = null;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
+    super.dispose();
+  }""",
+          )
+          text = text.replace(
+              "_SearchResults(results: results, query: _query)",
+              "_SearchResults(results: results, query: _query, currency: controller.settings.currency)",
+          )
+          text = text.replace(
+              "const _FollowUsRow(),",
+              "_FollowUsRow(links: _socialLinks),",
+          )
+          text = text.replace(
+              "class _SearchResults extends StatelessWidget {\n  const _SearchResults({required this.results, required this.query});\n\n  final List<Product> results;\n  final String query;",
+              "class _SearchResults extends StatelessWidget {\n  const _SearchResults({required this.results, required this.query, required this.currency});\n\n  final List<Product> results;\n  final String query;\n  final String currency;",
+          )
+          text = text.replace(
+              "...results.map((product) => _SearchResultTile(product: product)),",
+              "...results.map((product) => _SearchResultTile(product: product, currency: currency)),",
+          )
+          text = text.replace(
+              "import 'product_details_screen.dart';\n",
+              "import 'product_details_screen.dart';\nimport '../../../../core/utils/currency_formatter.dart';\n",
+          )
+          text = text.replace(
+              "const _SearchResultTile({required this.product});\n\n  final Product product;",
+              "const _SearchResultTile({required this.product, required this.currency});\n\n  final Product product;\n  final String currency;",
+          )
+          text = text.replace(
+              "'€${product.basePrice.toStringAsFixed(2)}',",
+              "CurrencyFormatter.format(product.basePrice, currency),",
+          )
+
+          location_pattern = re.compile(r"class _LocationTile extends StatelessWidget \{.*?\n\}\n\nclass _FollowUsRow", re.S)
+          location_replacement = '''class _LocationTile extends StatelessWidget {
+  const _LocationTile({required this.location});
+
+  final CafeLocation location;
+
+  Future<void> _openMap(BuildContext context) async {
+    final raw = location.mapUrl.trim();
+    if (raw.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Map link is not configured for this location.')),
+      );
+      return;
+    }
+
+    final uri = Uri.tryParse(raw);
+    if (uri == null || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to open the map link.')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: location.hasMapLink ? () => _openMap(context) : null,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: theme.brightness == Brightness.dark ? 0.3 : 0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.storefront_outlined, color: theme.colorScheme.primary),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(location.name, style: theme.textTheme.titleLarge?.copyWith(fontSize: 15)),
+                  const SizedBox(height: 2),
+                  Text(location.address, style: theme.textTheme.bodyMedium?.copyWith(fontSize: 12)),
+                ],
+              ),
+            ),
+            Icon(
+              location.hasMapLink ? Icons.open_in_new : Icons.location_on_outlined,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FollowUsRow'''
+          text, count = location_pattern.subn(location_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('location widget block not found')
+
+          social_pattern = re.compile(r"class _FollowUsRow extends StatelessWidget \{.*?\n\}\n$", re.S)
+          social_replacement = '''class _FollowUsRow extends StatelessWidget {
+  const _FollowUsRow({required this.links});
+
+  final List<RestaurantSocialLink> links;
+
+  Future<void> _openSocial(BuildContext context, RestaurantSocialLink link) async {
+    final uri = Uri.tryParse(link.url);
+    if (uri == null || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to open ${link.label.isEmpty ? link.platform : link.label}.')),
+        );
+      }
+    }
+  }
+
+  ({IconData icon, Color color, String label}) _visualFor(
+    BuildContext context,
+    RestaurantSocialLink link,
+  ) {
+    final theme = Theme.of(context);
+    switch (link.platform) {
+      case 'instagram':
+        return (icon: Icons.camera_alt_outlined, color: const Color(0xFFE1306C), label: link.label.isEmpty ? 'Instagram' : link.label);
+      case 'facebook':
+        return (icon: Icons.facebook, color: const Color(0xFF1877F2), label: link.label.isEmpty ? 'Facebook' : link.label);
+      case 'tiktok':
+        return (icon: Icons.music_note, color: theme.colorScheme.onSurface, label: link.label.isEmpty ? 'TikTok' : link.label);
+      default:
+        return (icon: Icons.public, color: theme.colorScheme.primary, label: link.label.isEmpty ? link.platform : link.label);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (links.isEmpty) {
+      return Text('Social links are not configured yet.', style: Theme.of(context).textTheme.bodyMedium);
+    }
+
+    return Row(
+      children: links.map((link) {
+        final visual = _visualFor(context, link);
+        return Expanded(
+          child: GestureDetector(
+            onTap: () => _openSocial(context, link),
+            child: Container(
+              margin: const EdgeInsets.only(right: 10),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(
+                color: visual.color.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  Icon(visual.icon, color: visual.color),
+                  const SizedBox(height: 6),
+                  Text(
+                    visual.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: visual.color),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+'''
+          text, count = social_pattern.subn(social_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('social widget block not found')
+
+          home.write_text(text)
+
+      - name: Commit repairs
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/features/ordering/presentation/controllers/ordering_controller.dart lib/features/ordering/presentation/screens/home_screen.dart
+          if git diff --cached --quiet; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git commit -m "fix: wire checkout metadata tax maps and social links"
+          git push
