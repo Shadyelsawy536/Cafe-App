@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-/// Per-tenant visual identity. Colors/logo/font come from the Dashboard;
-/// the layout and animation system they get applied to never changes.
+/// Per-tenant visual identity managed by the Restaurant Dashboard.
 class Branding {
   final String logoUrl;
+  final String coverUrl;
   final Color primaryColor;
   final Color secondaryColor;
   final Color backgroundColor;
@@ -11,6 +11,7 @@ class Branding {
 
   const Branding({
     required this.logoUrl,
+    this.coverUrl = '',
     required this.primaryColor,
     required this.secondaryColor,
     required this.backgroundColor,
@@ -18,7 +19,8 @@ class Branding {
   });
 
   factory Branding.fromJson(Map<String, dynamic> json) => Branding(
-        logoUrl: json['logo'] as String? ?? '',
+        logoUrl: json['logo'] as String? ?? json['logoUrl'] as String? ?? '',
+        coverUrl: json['cover'] as String? ?? json['coverUrl'] as String? ?? '',
         primaryColor:
             _colorFromHex(json['primaryColor'] as String? ?? '#8B4513'),
         secondaryColor:
@@ -35,9 +37,9 @@ class Branding {
     return Color(value);
   }
 
-  /// Used before the real branding doc has loaded from the backend.
   static const fallback = Branding(
     logoUrl: '',
+    coverUrl: '',
     primaryColor: Color(0xFF8B4513),
     secondaryColor: Color(0xFFF5E6D3),
     backgroundColor: Color(0xFFFFF9F4),
