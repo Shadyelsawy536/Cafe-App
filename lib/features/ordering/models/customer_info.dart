@@ -2,14 +2,7 @@ import 'payment_method.dart';
 
 enum DeliveryType { delivery, pickup }
 
-/// Collected on the checkout details screen and reused to prefill the
-/// Profile screen and future orders.
-///
-/// Exactly one of [address] / [pickupBranch] is meaningful, depending on
-/// [deliveryType] — this mirrors how a real order actually works (you
-/// don't have both a delivery address and a pickup branch at once).
-/// Once multi-tenant exists, which delivery methods a business even
-/// offers becomes a Dashboard setting rather than always showing both.
+/// Customer/order options collected during checkout.
 class CustomerInfo {
   final String name;
   final String phone;
@@ -17,6 +10,8 @@ class CustomerInfo {
   final String? address;
   final String? pickupBranch;
   final PaymentMethod paymentMethod;
+  final String notes;
+  final DateTime? scheduledFor;
 
   const CustomerInfo({
     required this.name,
@@ -25,5 +20,7 @@ class CustomerInfo {
     this.address,
     this.pickupBranch,
     required this.paymentMethod,
+    this.notes = '',
+    this.scheduledFor,
   });
 }
