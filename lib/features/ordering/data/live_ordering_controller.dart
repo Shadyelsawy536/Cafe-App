@@ -1,6 +1,3 @@
-import 'package:flutter/material.dart';
-
-import '../../../core/config/tenant_config.dart';
 import 'dashboard_config_realtime.dart';
 import 'product_repository.dart';
 import '../presentation/controllers/ordering_controller.dart';
