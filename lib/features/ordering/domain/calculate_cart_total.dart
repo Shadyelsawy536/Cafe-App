@@ -13,8 +13,9 @@ class CartTotals {
 }
 
 /// Pure function, no Flutter/backend dependency — easy to unit test on its own.
-CartTotals calculateCartTotals(List<CartItem> items, {double taxRate = 0.10}) {
+CartTotals calculateCartTotals(List<CartItem> items, {double taxRate = 0}) {
   final subtotal = items.fold<double>(0, (sum, item) => sum + item.total);
-  final tax = subtotal * taxRate;
+  final safeRate = taxRate < 0 ? 0 : taxRate;
+  final tax = subtotal * safeRate;
   return CartTotals(subtotal: subtotal, tax: tax, total: subtotal + tax);
 }
