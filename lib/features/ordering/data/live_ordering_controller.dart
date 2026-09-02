@@ -1,25 +1,22 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
-import '../../core/config/tenant_config.dart';
-import 'product_repository.dart';
+import '../../../core/config/tenant_config.dart';
 import 'dashboard_config_realtime.dart';
-import '../models/branding.dart';
-import '../models/cafe_location.dart';
-import '../models/experience_settings.dart';
+import 'product_repository.dart';
 import '../presentation/controllers/ordering_controller.dart';
 
 /// OrderingController with live Restaurant Dashboard configuration.
 class LiveOrderingController extends OrderingController {
   LiveOrderingController({required ProductRepository repository})
-      : _configRealtime = DashboardConfigRealtime(
-          repository: repository,
-          onSettings: (_) {},
-          onBranding: (_) {},
-          onLocations: (_) {},
-        ),
-        super(repository: repository) {
-    _configRealtime = DashboardConfigRealtime(
-      repository: repository,
+      : _repository = repository,
+        super(repository: repository);
+
+  final ProductRepository _repository;
+  DashboardConfigRealtime? _configRealtime;
+
+  void startDashboardRealtime() {
+    _configRealtime ??= DashboardConfigRealtime(
+      repository: _repository,
       onSettings: (value) {
         settings = value;
         notifyListeners();
@@ -33,14 +30,12 @@ class LiveOrderingController extends OrderingController {
         notifyListeners();
       },
     );
-    _configRealtime.start();
+    _configRealtime!.start();
   }
-
-  late DashboardConfigRealtime _configRealtime;
 
   @override
   void dispose() {
-    _configRealtime.dispose();
+    _configRealtime?.dispose();
     super.dispose();
   }
 }
