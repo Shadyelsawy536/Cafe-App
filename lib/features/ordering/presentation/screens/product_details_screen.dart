@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/utils/currency_formatter.dart';
 import '../../models/product.dart';
 import '../controllers/ordering_controller.dart';
 import '../widgets/animated_action_button.dart';
@@ -21,6 +22,7 @@ class ProductDetailsScreen extends StatelessWidget {
         final theme = Theme.of(context);
         final unitPrice = controller.currentUnitPrice(product);
         final total = controller.currentTotal(product);
+        final currency = controller.settings.currency;
 
         return Scaffold(
           appBar: AppBar(leading: const BackButton()),
@@ -70,7 +72,7 @@ class ProductDetailsScreen extends StatelessWidget {
                       transitionBuilder: (child, animation) =>
                           FadeTransition(opacity: animation, child: child),
                       child: Text(
-                        '€${total.toStringAsFixed(2)}',
+                        CurrencyFormatter.format(total, currency),
                         key: ValueKey(total),
                         style: theme.textTheme.titleLarge,
                       ),
@@ -80,7 +82,7 @@ class ProductDetailsScreen extends StatelessWidget {
                 const SizedBox(height: 24),
                 AnimatedActionButton(
                   status: _mapAddToCart(controller.addToCartStatus),
-                  idleLabel: 'Add to cart · €${unitPrice.toStringAsFixed(2)}',
+                  idleLabel: 'Add to cart · ${CurrencyFormatter.format(unitPrice, currency)}',
                   onPressed: () {
                     if (!controller.canAddToCart(product)) {
                       ScaffoldMessenger.of(context).showSnackBar(
