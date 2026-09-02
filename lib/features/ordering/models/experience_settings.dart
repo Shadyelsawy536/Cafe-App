@@ -1,21 +1,20 @@
 enum BrowseLayout { grid, list }
 
-/// App-wide experience toggles the Dashboard can eventually control (see
-/// the "App Experience" section of the original spec). Only browseLayout
-/// is wired today — more toggles (animation style, enabled sections) can
-/// be added to this same model later without any screen changing, the
-/// same way branding colors already work.
+/// App-wide settings controlled by the Restaurant Dashboard.
 class ExperienceSettings {
   final BrowseLayout browseLayout;
+  final String currency;
 
-  const ExperienceSettings({required this.browseLayout});
+  const ExperienceSettings({required this.browseLayout, this.currency = 'EGP'});
 
   factory ExperienceSettings.fromJson(Map<String, dynamic> json) {
-    final raw = json['browseLayout'] as String? ?? 'grid';
+    final rawLayout = json['browseLayout'] as String? ?? 'grid';
+    final rawCurrency = (json['currency'] as String? ?? 'EGP').trim().toUpperCase();
     return ExperienceSettings(
-      browseLayout: raw == 'list' ? BrowseLayout.list : BrowseLayout.grid,
+      browseLayout: rawLayout == 'list' ? BrowseLayout.list : BrowseLayout.grid,
+      currency: rawCurrency.isEmpty ? 'EGP' : rawCurrency,
     );
   }
 
-  static const fallback = ExperienceSettings(browseLayout: BrowseLayout.grid);
+  static const fallback = ExperienceSettings(browseLayout: BrowseLayout.grid, currency: 'EGP');
 }
