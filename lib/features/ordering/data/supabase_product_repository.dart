@@ -75,30 +75,34 @@ class SupabaseProductRepository implements ProductRepository {
 
   @override
   Future<Branding> fetchBranding() async {
-    final row = await _client.from('restaurant_branding')
-        .select('primary_color, secondary_color, background_color, font_family')
-        .eq('restaurant_id', TenantConfig.restaurantId).maybeSingle();
+    final row = await _client.from('restaurant_branding').select('''
+          primary_color, secondary_color, background_color, font_family,
+          customer_primary_color, customer_secondary_color,
+          customer_background_color, customer_logo_url, customer_cover_url
+        ''').eq('restaurant_id', TenantConfig.restaurantId).maybeSingle();
     if (row == null) return Branding.fallback;
     return Branding.fromJson({
-      'primaryColor': row['primary_color'],
-      'secondaryColor': row['secondary_color'],
-      'backgroundColor': row['background_color'],
+      'primaryColor': row['customer_primary_color'] ?? row['primary_color'],
+      'secondaryColor': row['customer_secondary_color'] ?? row['secondary_color'],
+      'backgroundColor': row['customer_background_color'] ?? row['background_color'],
+      'logo': row['customer_logo_url'],
+      'cover': row['customer_cover_url'],
       'fontFamily': row['font_family'],
     });
   }
 
   @override
   Future<ExperienceSettings> fetchSettings() async {
-    final row = await _client.from('restaurant_settings')
-        .select('currency')
-        .eq('restaurant_id', TenantConfig.restaurantId)
-        .maybeSingle();
+    final row = await _client.from('restaurant_settings').select('''
+          currency, preparation_time_minutes, accepts_scheduled_orders,
+          scheduled_order_max_days, customer_notes_enabled, operational_status,
+          closure_message, accepts_delivery, accepts_pickup, min_order_amount,
+          tax_rate, timezone, order_number_prefix
+        ''').eq('restaurant_id', TenantConfig.restaurantId).maybeSingle();
 
     if (row == null) return ExperienceSettings.fallback;
 
-    return ExperienceSettings.fromJson({
-      'currency': row['currency'],
-    });
+    return ExperienceSettings.fromJson(row);
   }
 
   @override
@@ -110,10 +114,17 @@ class SupabaseProductRepository implements ProductRepository {
 
   @override
   Future<List<CafeLocation>> fetchLocations() async {
-    final row = await _client.from('restaurants').select('name, address')
-        .eq('id', TenantConfig.restaurantId).maybeSingle();
-    final address = row?['address'] as String?;
-    if (row == null || address == null || address.isEmpty) return [];
-    return [CafeLocation(name: row['name'] as String, address: address)];
+    final rows = await _client.from('restaurant_locations').select('''
+          id, name, map_url, latitude, longitude, is_primary, sort_order
+        ''').eq('restaurant_id', TenantConfig.restaurantId)
+        .eq('is_active', true).order('sort_order');
+
+    return (rows as List<dynamic>).map((row) => CafeLocation(
+      name: row['name'] as String,
+      address: '',
+      mapUrl: row['map_url'] as String? ?? '',
+      latitude: (row['latitude'] as num?)?.toDouble(),
+      longitude: (row['longitude'] as num?)?.toDouble(),
+    )).toList();
   }
 }
