@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/utils/currency_formatter.dart';
 import '../../models/cafe_location.dart';
 import '../../models/customer_info.dart';
 import '../../models/payment_method.dart';
@@ -29,7 +30,6 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
   @override
   void initState() {
     super.initState();
-    // Prefill from whatever the customer used last time, if anything.
     final controller = context.read<OrderingController>();
     final previous = controller.lastCustomerInfo;
     _nameController = TextEditingController(text: previous?.name ?? '');
@@ -56,6 +56,23 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
     return Consumer<OrderingController>(
       builder: (context, controller, _) {
         final totals = controller.cartTotals;
+        final settings = controller.settings;
+        final deliveryEnabled = settings.acceptsDelivery;
+        final pickupEnabled = settings.acceptsPickup;
+
+        if (!deliveryEnabled && _deliveryType == DeliveryType.delivery && pickupEnabled) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _deliveryType = DeliveryType.pickup);
+          });
+        }
+        if (!pickupEnabled && _deliveryType == DeliveryType.pickup && deliveryEnabled) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _deliveryType = DeliveryType.delivery);
+          });
+        }
+
+        final closed = settings.operationalStatus != RestaurantOperationalStatus.open;
+        final minimumReached = totals.subtotal >= settings.minOrderAmount;
 
         return Scaffold(
           appBar: AppBar(title: const Text('Checkout Details')),
@@ -65,6 +82,22 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(24),
                 children: [
+                  if (closed) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        settings.closureMessage.isNotEmpty
+                            ? settings.closureMessage
+                            : 'We are not accepting orders right now.',
+                        style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
                   Text('Contact', style: theme.textTheme.titleLarge),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -84,49 +117,60 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
                         ? 'Enter your phone number'
                         : null,
                   ),
-                  const SizedBox(height: 28),
-                  Text('Delivery', style: theme.textTheme.titleLarge),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SelectableOptionTile(
-                          label: 'Delivery',
-                          icon: Icons.delivery_dining_outlined,
-                          isSelected: _deliveryType == DeliveryType.delivery,
-                          onTap: () => setState(() => _deliveryType = DeliveryType.delivery),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: SelectableOptionTile(
-                          label: 'Pickup',
-                          icon: Icons.storefront_outlined,
-                          isSelected: _deliveryType == DeliveryType.pickup,
-                          onTap: () => setState(() => _deliveryType = DeliveryType.pickup),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  if (_deliveryType == DeliveryType.delivery)
-                    TextFormField(
-                      controller: _addressController,
-                      decoration: const InputDecoration(labelText: 'Delivery address'),
-                      maxLines: 2,
-                      validator: (value) {
-                        if (_deliveryType != DeliveryType.delivery) return null;
-                        return (value == null || value.trim().isEmpty)
-                            ? 'Enter a delivery address'
-                            : null;
-                      },
-                    )
-                  else
-                    _BranchPicker(
-                      locations: controller.locations,
-                      selected: _pickupBranch,
-                      onSelected: (name) => setState(() => _pickupBranch = name),
+                  if (deliveryEnabled || pickupEnabled) ...[
+                    const SizedBox(height: 28),
+                    Text('Order Type', style: theme.textTheme.titleLarge),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        if (deliveryEnabled)
+                          Expanded(
+                            child: SelectableOptionTile(
+                              label: 'Delivery',
+                              icon: Icons.delivery_dining_outlined,
+                              isSelected: _deliveryType == DeliveryType.delivery,
+                              onTap: () => setState(() => _deliveryType = DeliveryType.delivery),
+                            ),
+                          ),
+                        if (deliveryEnabled && pickupEnabled) const SizedBox(width: 12),
+                        if (pickupEnabled)
+                          Expanded(
+                            child: SelectableOptionTile(
+                              label: 'Pickup',
+                              icon: Icons.storefront_outlined,
+                              isSelected: _deliveryType == DeliveryType.pickup,
+                              onTap: () => setState(() => _deliveryType = DeliveryType.pickup),
+                            ),
+                          ),
+                      ],
                     ),
+                    const SizedBox(height: 16),
+                    if (_deliveryType == DeliveryType.delivery)
+                      TextFormField(
+                        controller: _addressController,
+                        decoration: const InputDecoration(labelText: 'Delivery address'),
+                        maxLines: 2,
+                        validator: (value) => (value == null || value.trim().isEmpty)
+                            ? 'Enter a delivery address'
+                            : null,
+                      )
+                    else
+                      _BranchPicker(
+                        locations: controller.locations,
+                        selected: _pickupBranch,
+                        onSelected: (name) => setState(() => _pickupBranch = name),
+                      ),
+                  ],
+                  if (settings.customerNotesEnabled) ...[
+                    const SizedBox(height: 20),
+                    const TextField(
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Order notes',
+                        hintText: 'Anything we should know?',
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 28),
                   Text('Payment Method', style: theme.textTheme.titleLarge),
                   const SizedBox(height: 12),
@@ -152,21 +196,27 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
                     ],
                   ),
                   const SizedBox(height: 32),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Total', style: theme.textTheme.titleLarge),
-                      Text('€${totals.total.toStringAsFixed(2)}',
-                          style: theme.textTheme.titleLarge),
-                    ],
+                  _SummaryRow(label: 'Subtotal', value: CurrencyFormatter.format(totals.subtotal, settings.currency)),
+                  const SizedBox(height: 8),
+                  _SummaryRow(label: 'Tax', value: CurrencyFormatter.format(totals.tax, settings.currency)),
+                  const Divider(height: 28),
+                  _SummaryRow(
+                    label: 'Total',
+                    value: CurrencyFormatter.format(totals.total, settings.currency),
+                    emphasized: true,
                   ),
+                  if (settings.minOrderAmount > 0 && !minimumReached) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Minimum order: ${CurrencyFormatter.format(settings.minOrderAmount, settings.currency)}',
+                      style: TextStyle(color: theme.colorScheme.error),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   AnimatedActionButton(
                     status: _mapCheckout(controller.checkoutStatus),
-                    idleLabel: _paymentMethod == PaymentMethod.visa
-                        ? 'Continue to Payment'
-                        : 'Place Order',
-                    onPressed: _submit,
+                    idleLabel: _paymentMethod == PaymentMethod.visa ? 'Continue to Payment' : 'Place Order',
+                    onPressed: closed || !minimumReached ? null : _submit,
                   ),
                 ],
               ),
@@ -178,16 +228,29 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    final controller = context.read<OrderingController>();
+    final settings = controller.settings;
+    final totals = controller.cartTotals;
 
-    if (_deliveryType == DeliveryType.pickup && _pickupBranch == null) {
+    if (settings.operationalStatus != RestaurantOperationalStatus.open) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Choose a branch for pickup')),
+        SnackBar(content: Text(settings.closureMessage.isNotEmpty ? settings.closureMessage : 'Orders are currently closed.')),
       );
       return;
     }
+    if (totals.subtotal < settings.minOrderAmount) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Minimum order is ${CurrencyFormatter.format(settings.minOrderAmount, settings.currency)}')),
+      );
+      return;
+    }
+    if (!_formKey.currentState!.validate()) return;
 
-    final controller = context.read<OrderingController>();
+    if (_deliveryType == DeliveryType.pickup && _pickupBranch == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Choose a branch for pickup')));
+      return;
+    }
+
     final info = CustomerInfo(
       name: _nameController.text.trim(),
       phone: _phoneController.text.trim(),
@@ -198,17 +261,11 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
     );
 
     if (_paymentMethod == PaymentMethod.visa) {
-      // Visa needs card details before the order is actually placed —
-      // that screen calls controller.checkout() itself once payment
-      // "succeeds", then this screen unwinds the same way Cash does.
-      await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => VisaPaymentScreen(customerInfo: info)),
-      );
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => VisaPaymentScreen(customerInfo: info)));
       return;
     }
 
     await controller.checkout(info);
-
     if (!mounted) return;
 
     if (controller.checkoutStatus != CheckoutStatus.success) {
@@ -218,11 +275,7 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
       return;
     }
 
-    // ReceiptScreen's Done/close button pops all the way back to the Menu,
-    // which unwinds this screen too — nothing else to do once this returns.
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ReceiptScreen()),
-    );
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReceiptScreen()));
   }
 
   ActionButtonStatus _mapCheckout(CheckoutStatus status) {
@@ -237,13 +290,24 @@ class _CheckoutDetailsScreenState extends State<CheckoutDetailsScreen> {
   }
 }
 
-class _BranchPicker extends StatelessWidget {
-  const _BranchPicker({
-    required this.locations,
-    required this.selected,
-    required this.onSelected,
-  });
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({required this.label, required this.value, this.emphasized = false});
+  final String label;
+  final String value;
+  final bool emphasized;
 
+  @override
+  Widget build(BuildContext context) {
+    final style = emphasized ? Theme.of(context).textTheme.titleLarge : Theme.of(context).textTheme.bodyLarge;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [Text(label, style: style), Text(value, style: style)],
+    );
+  }
+}
+
+class _BranchPicker extends StatelessWidget {
+  const _BranchPicker({required this.locations, required this.selected, required this.onSelected});
   final List<CafeLocation> locations;
   final String? selected;
   final ValueChanged<String> onSelected;
@@ -251,14 +315,9 @@ class _BranchPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     if (locations.isEmpty) {
-      return Text(
-        'No branches available yet.',
-        style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
-      );
+      return Text('No branches available yet.', style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)));
     }
-
     return Column(
       children: locations.map<Widget>((location) {
         final isSelected = location.name == selected;
@@ -272,37 +331,18 @@ class _BranchPicker extends StatelessWidget {
               decoration: BoxDecoration(
                 color: isSelected ? theme.colorScheme.primary : theme.cardColor,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: isSelected ? theme.colorScheme.primary : theme.dividerColor,
-                ),
+                border: Border.all(color: isSelected ? theme.colorScheme.primary : theme.dividerColor),
               ),
               child: Row(
                 children: [
-                  Icon(
-                    isSelected ? Icons.check_circle : Icons.storefront_outlined,
-                    color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.primary,
-                  ),
+                  Icon(isSelected ? Icons.check_circle : Icons.storefront_outlined, color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.primary),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          location.name,
-                          style: TextStyle(
-                            color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          location.address,
-                          style: TextStyle(
-                            color: isSelected
-                                ? theme.colorScheme.onPrimary.withValues(alpha: 0.7)
-                                : theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                            fontSize: 12,
-                          ),
-                        ),
+                        Text(location.name, style: TextStyle(color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, fontWeight: FontWeight.w600)),
+                        Text(location.address, style: TextStyle(color: isSelected ? theme.colorScheme.onPrimary.withValues(alpha: 0.7) : theme.colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 12)),
                       ],
                     ),
                   ),
