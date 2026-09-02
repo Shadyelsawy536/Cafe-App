@@ -115,13 +115,13 @@ class SupabaseProductRepository implements ProductRepository {
   @override
   Future<List<CafeLocation>> fetchLocations() async {
     final rows = await _client.from('restaurant_locations').select('''
-          id, name, map_url, latitude, longitude, is_primary, sort_order
+          id, name, map_url, address, latitude, longitude, is_primary, sort_order
         ''').eq('restaurant_id', TenantConfig.restaurantId)
         .eq('is_active', true).order('sort_order');
 
     return (rows as List<dynamic>).map((row) => CafeLocation(
       name: row['name'] as String,
-      address: '',
+      address: row['address'] as String? ?? '',
       mapUrl: row['map_url'] as String? ?? '',
       latitude: (row['latitude'] as num?)?.toDouble(),
       longitude: (row['longitude'] as num?)?.toDouble(),
