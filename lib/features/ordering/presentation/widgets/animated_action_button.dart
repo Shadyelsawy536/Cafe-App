@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 
 enum ActionButtonStatus { idle, processing, success }
 
-/// "Add to cart" and "Checkout" are the same interaction shape (idle ->
-/// processing -> success), so they share one animated widget instead of
-/// each screen reinventing its own button states.
 class AnimatedActionButton extends StatelessWidget {
   const AnimatedActionButton({
     super.key,
@@ -15,19 +12,15 @@ class AnimatedActionButton extends StatelessWidget {
 
   final ActionButtonStatus status;
   final String idleLabel;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final isEnabled = status == ActionButtonStatus.idle;
+    final isEnabled = status == ActionButtonStatus.idle && onPressed != null;
     final isProcessing = status == ActionButtonStatus.processing;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // AnimatedContainer can't tween a width from double.infinity to a
-        // finite value (BoxConstraints.lerp asserts on it) — so instead of
-        // `double.infinity` for the idle/success width, use the actual
-        // available width from LayoutBuilder, which is always finite.
         final fullWidth = constraints.maxWidth;
 
         return Center(
@@ -44,8 +37,7 @@ class AnimatedActionButton extends StatelessWidget {
                     : Colors.black87,
                 shape: isProcessing
                     ? const CircleBorder()
-                    : RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18)),
+                    : RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 padding: EdgeInsets.zero,
               ),
               child: AnimatedSwitcher(
@@ -78,8 +70,7 @@ class AnimatedActionButton extends StatelessWidget {
         return Text(
           idleLabel,
           key: const ValueKey('idle'),
-          style: const TextStyle(
-              color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
         );
     }
   }
