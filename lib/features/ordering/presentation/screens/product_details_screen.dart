@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/utils/currency_formatter.dart';
+import '../../models/cart_item.dart';
 import '../../models/product.dart';
 import '../controllers/ordering_controller.dart';
 import '../widgets/animated_action_button.dart';
@@ -92,7 +95,7 @@ class ProductDetailsScreen extends StatelessWidget {
                       );
                       return;
                     }
-                    controller.addToCart(product);
+                    _addToCartInstantly(controller);
                   },
                 ),
                 const SizedBox(height: 24),
@@ -101,6 +104,33 @@ class ProductDetailsScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  void _addToCartInstantly(OrderingController controller) {
+    // Cart insertion is local-only. Do not wait on timers/network here.
+    controller.addToCartStatus = AddToCartStatus.added;
+
+    controller.cart.add(
+      CartItem(
+        id: '${product.id}_${DateTime.now().microsecondsSinceEpoch}',
+        product: product,
+        size: controller.selectedSize,
+        modifiers: controller.selectedModifiers.values
+            .expand((set) => set)
+            .toList(),
+        quantity: controller.quantity,
+      ),
+    );
+
+    controller.notifyListeners();
+
+    // Keep the success feedback, but move it off the critical tap path.
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 300), () {
+        controller.addToCartStatus = AddToCartStatus.idle;
+        controller.notifyListeners();
+      }),
     );
   }
 
