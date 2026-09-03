@@ -1,3 +1,4 @@
+import '../../models/product.dart';
 import 'ordering_controller.dart';
 
 class _OrderingUiState {
@@ -13,11 +14,9 @@ _OrderingUiState _stateFor(OrderingController controller) =>
 extension OrderingControllerUiState on OrderingController {
   String? get selectedCategory => _stateFor(this).selectedCategory;
 
-  List<dynamic> get _filteredProductsInternal => selectedCategory == null
+  List<Product> get filteredProducts => selectedCategory == null
       ? products
       : products.where((product) => product.category == selectedCategory).toList();
-
-  dynamic get filteredProducts => _filteredProductsInternal;
 
   void setCategory(String? category) {
     final state = _stateFor(this);
@@ -41,11 +40,9 @@ extension OrderingControllerUiState on OrderingController {
 
   void setCarouselIndex(int index) {
     final state = _stateFor(this);
-    if (products.isEmpty) {
-      state.carouselIndex = 0;
-    } else {
-      state.carouselIndex = index.clamp(0, products.length - 1);
-    }
+    state.carouselIndex = products.isEmpty
+        ? 0
+        : index.clamp(0, products.length - 1);
     notifyListeners();
   }
 }
