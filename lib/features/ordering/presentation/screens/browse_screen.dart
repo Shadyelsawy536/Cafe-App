@@ -5,6 +5,7 @@ import '../../../../core/animations/route_transitions.dart';
 import '../../models/experience_settings.dart';
 import '../../models/product.dart';
 import '../controllers/ordering_controller.dart';
+import '../controllers/ordering_controller_ui_state.dart';
 import '../widgets/product_grid_card.dart';
 import '../widgets/product_list_tile.dart';
 import 'product_details_screen.dart';
