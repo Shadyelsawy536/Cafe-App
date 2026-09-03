@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/ordering_controller.dart';
+import '../controllers/ordering_controller_ui_state.dart';
 import '../widgets/category_chip.dart';
 import '../widgets/product_showcase.dart';
 
@@ -64,9 +65,6 @@ class _CategoryScreenState extends State<CategoryScreen> {
                       : SingleChildScrollView(
                           padding: const EdgeInsets.symmetric(horizontal: 24),
                           child: ProductShowcase(
-                            // Force a fresh PageController when the category
-                            // changes instead of reusing one built for a
-                            // different-length product list.
                             key: ValueKey(_activeCategory),
                             products: products,
                           ),
