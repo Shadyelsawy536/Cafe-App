@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/ordering_controller.dart';
+import '../controllers/ordering_controller_ui_state.dart';
 import '../widgets/product_carousel.dart';
 import '../widgets/product_hero.dart';
 import 'browse_screen.dart';
