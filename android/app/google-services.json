@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "978954360834",
+    "project_id": "fnb-platform-2dfd9",
+    "storage_bucket": "fnb-platform-2dfd9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:978954360834:android:d01c9abf6701abfb252f1b",
+        "android_client_info": {
+          "package_name": "com.example.cafe_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDWQkArqcu2Wno83e0YryQkNiX0RntkD8A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
