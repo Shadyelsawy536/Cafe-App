@@ -160,8 +160,27 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
                             : null,
                   ),
                   const SizedBox(height: 24),
+                  if (widget.customerInfo.deliveryType ==
+                          DeliveryType.delivery &&
+                      widget.customerInfo.deliveryFee > 0) ...[
+                    Row(
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Delivery'),
+                        Text(
+                          CurrencyFormatter.format(
+                            widget.customerInfo.deliveryFee,
+                            currency,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment:
+                        MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
                         'Total',
@@ -169,7 +188,8 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
                       ),
                       Text(
                         CurrencyFormatter.format(
-                          totals.total,
+                          totals.total +
+                              widget.customerInfo.deliveryFee,
                           currency,
                         ),
                         style: theme.textTheme.titleLarge,
@@ -179,7 +199,7 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
                   const SizedBox(height: 20),
                   AnimatedActionButton(
                     status: _mapCheckout(controller.checkoutStatus),
-                    idleLabel: 'Pay ${CurrencyFormatter.format(totals.total, currency)}',
+                    idleLabel: 'Pay ${CurrencyFormatter.format(totals.total + widget.customerInfo.deliveryFee, currency)}',
                     onPressed: _submit,
                   ),
                   const SizedBox(height: 12),
