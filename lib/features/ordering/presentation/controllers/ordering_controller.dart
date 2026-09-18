@@ -1,15 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/config/tenant_config.dart';
+import '../../data/delivery_zone_repository.dart';
 import '../../data/product_repository.dart';
 import '../../domain/calculate_cart_total.dart';
 import '../../models/branding.dart';
 import '../../models/cafe_location.dart';
 import '../../models/cart_item.dart';
 import '../../models/customer_info.dart';
+import '../../models/delivery_zone.dart';
 import '../../models/experience_settings.dart';
 import '../../models/modifier.dart';
 import '../../models/modifier_group.dart';
@@ -53,6 +56,9 @@ class OrderingController extends ChangeNotifier {
   }
 
   final ProductRepository _repository;
+
+  final DeliveryZoneRepository _deliveryZoneRepository =
+      DeliveryZoneRepository();
 
   final SupabaseClient _client = Supabase.instance.client;
 
@@ -123,6 +129,14 @@ class OrderingController extends ChangeNotifier {
   final List<Order> orderHistory = [];
 
   CustomerInfo? lastCustomerInfo;
+
+  DeliveryZone? deliveryZone;
+  bool resolvingDeliveryZone = false;
+  String? deliveryLocationError;
+  double? deliveryLatitude;
+  double? deliveryLongitude;
+
+  Future<void>? _deliveryZoneRequest;
 
   int get cartCount => cart.fold<int>(
         0,
@@ -881,6 +895,112 @@ class OrderingController extends ChangeNotifier {
         taxRate: settings.taxRate,
       );
 
+  Future<void> resolveDeliveryZone() {
+    final existing = _deliveryZoneRequest;
+    if (existing != null) {
+      return existing;
+    }
+
+    final request = _resolveDeliveryZoneInternal();
+    _deliveryZoneRequest = request;
+
+    return request.whenComplete(() {
+      if (identical(_deliveryZoneRequest, request)) {
+        _deliveryZoneRequest = null;
+      }
+    });
+  }
+
+  Future<void> _resolveDeliveryZoneInternal() async {
+    if (_disposed) return;
+
+    resolvingDeliveryZone = true;
+    deliveryLocationError = null;
+    deliveryZone = null;
+    deliveryLatitude = null;
+    deliveryLongitude = null;
+
+    notifyListeners();
+
+    try {
+      final serviceEnabled =
+          await Geolocator.isLocationServiceEnabled();
+
+      if (!serviceEnabled) {
+        throw Exception(
+          'Location services are turned off. Please enable location services to continue.',
+        );
+      }
+
+      var permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        throw Exception(
+          'Location permission is required for delivery orders.',
+        );
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        throw Exception(
+          'Location permission is permanently denied. Please enable it from app settings.',
+        );
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+
+      final zone =
+          await _deliveryZoneRepository.findForCurrentLocation(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+
+      if (zone == null) {
+        throw Exception(
+          'Delivery is not available at your current location.',
+        );
+      }
+
+      if (_disposed) return;
+
+      deliveryZone = zone;
+      deliveryLatitude = position.latitude;
+      deliveryLongitude = position.longitude;
+      resolvingDeliveryZone = false;
+      deliveryLocationError = null;
+
+      notifyListeners();
+    } catch (e) {
+      if (_disposed) return;
+
+      resolvingDeliveryZone = false;
+      deliveryZone = null;
+      deliveryLatitude = null;
+      deliveryLongitude = null;
+      deliveryLocationError =
+          e.toString().replaceFirst('Exception: ', '');
+
+      notifyListeners();
+    }
+  }
+
+  void clearDeliveryZone() {
+    deliveryZone = null;
+    deliveryLatitude = null;
+    deliveryLongitude = null;
+    deliveryLocationError = null;
+    resolvingDeliveryZone = false;
+    notifyListeners();
+  }
+
   Future<void> checkout(
     CustomerInfo customerInfo,
   ) async {
@@ -936,7 +1056,7 @@ class OrderingController extends ChangeNotifier {
 
       final orderId =
           await _client.rpc(
-        'place_order',
+        'place_order_with_location',
         params: {
           'p_restaurant_id':
               TenantConfig.restaurantId,
@@ -963,6 +1083,8 @@ class OrderingController extends ChangeNotifier {
               customerInfo.scheduledFor
                   ?.toUtc()
                   .toIso8601String(),
+          'p_latitude': customerInfo.deliveryLatitude,
+          'p_longitude': customerInfo.deliveryLongitude,
           'p_items': items,
         },
       ) as String;
@@ -981,6 +1103,18 @@ class OrderingController extends ChangeNotifier {
       lastOrderItems = order.items;
 
       lastCustomerInfo = customerInfo;
+
+      deliveryZone = customerInfo.deliveryZoneId != null
+          ? DeliveryZone(
+              id: customerInfo.deliveryZoneId!,
+              name: customerInfo.deliveryZoneName ?? '',
+              deliveryFee: customerInfo.deliveryFee,
+              minOrderAmount: 0,
+            )
+          : null;
+      deliveryLatitude = customerInfo.deliveryLatitude;
+      deliveryLongitude = customerInfo.deliveryLongitude;
+      deliveryLocationError = null;
 
       cart.clear();
 
@@ -1070,6 +1204,11 @@ class OrderingController extends ChangeNotifier {
     subtotal,
     tax,
     total,
+    delivery_zone_id,
+    delivery_zone_name,
+    delivery_fee,
+    delivery_latitude,
+    delivery_longitude,
     status,
     created_at,
     order_items(
@@ -1186,6 +1325,16 @@ class OrderingController extends ChangeNotifier {
             row['delivery_type'] == 'delivery'
                 ? DeliveryType.delivery
                 : DeliveryType.pickup,
+        deliveryZoneId:
+            row['delivery_zone_id'] as String?,
+        deliveryZoneName:
+            row['delivery_zone_name'] as String?,
+        deliveryFee:
+            (row['delivery_fee'] as num?)?.toDouble() ?? 0,
+        deliveryLatitude:
+            (row['delivery_latitude'] as num?)?.toDouble(),
+        deliveryLongitude:
+            (row['delivery_longitude'] as num?)?.toDouble(),
         address:
             row['delivery_address'] as String?,
         pickupBranch:
