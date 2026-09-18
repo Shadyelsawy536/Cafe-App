@@ -119,6 +119,14 @@ class _ReceiptScreenState extends State<ReceiptScreen>
                 totals.tax,
                 currency,
               ),
+              if (controller.lastCustomerInfo?.deliveryType ==
+                      DeliveryType.delivery &&
+                  controller.lastCustomerInfo!.deliveryFee > 0)
+                _totalsRow(
+                  'Delivery',
+                  controller.lastCustomerInfo!.deliveryFee,
+                  currency,
+                ),
               const SizedBox(height: 8),
               _totalsRow(
                 'Total',
@@ -137,6 +145,16 @@ class _ReceiptScreenState extends State<ReceiptScreen>
                 style: theme.textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
+              if (controller.lastCustomerInfo!.deliveryType ==
+                      DeliveryType.delivery &&
+                  controller.lastCustomerInfo!.deliveryZoneName != null)
+                Text(
+                  'Zone: ' +
+                      controller.lastCustomerInfo!.deliveryZoneName!,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               Text(
                 controller.lastCustomerInfo!.deliveryType ==
                         DeliveryType.delivery
