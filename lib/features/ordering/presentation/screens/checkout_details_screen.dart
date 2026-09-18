@@ -5,6 +5,7 @@ import '../../../../core/utils/currency_formatter.dart';
 import '../../data/order_metadata_repository.dart';
 import '../../models/cafe_location.dart';
 import '../../models/customer_info.dart';
+import '../../models/delivery_zone.dart';
 import '../../models/experience_settings.dart';
 import '../../models/payment_method.dart';
 import '../controllers/ordering_controller.dart';
@@ -104,6 +105,13 @@ class _CheckoutDetailsScreenState
 
     _scheduledFor =
         previous?.scheduledFor;
+
+    if (_deliveryType == DeliveryType.delivery) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.read<OrderingController>().resolveDeliveryZone();
+      });
+    }
   }
 
   @override
@@ -149,6 +157,21 @@ class _CheckoutDetailsScreenState
         final minimumReached =
             totals.subtotal >=
                 settings.minOrderAmount;
+
+        final deliveryMinimumReached =
+            _deliveryType != DeliveryType.delivery ||
+            controller.deliveryZone == null ||
+            totals.subtotal >=
+                controller.deliveryZone!.minOrderAmount;
+
+        final deliveryReady =
+            _deliveryType != DeliveryType.delivery ||
+            (controller.deliveryZone != null &&
+                !controller.resolvingDeliveryZone &&
+                controller.deliveryLocationError == null &&
+                controller.deliveryLatitude != null &&
+                controller.deliveryLongitude != null &&
+                deliveryMinimumReached);
 
         final scheduledEnabled =
             settings.acceptsScheduledOrders &&
@@ -326,12 +349,13 @@ class _CheckoutDetailsScreenState
                                   _deliveryType ==
                                       DeliveryType
                                           .delivery,
-                              onTap: () =>
-                                  setState(
-                                () => _deliveryType =
-                                    DeliveryType
-                                        .delivery,
-                              ),
+                              onTap: () {
+                                setState(
+                                  () => _deliveryType =
+                                      DeliveryType.delivery,
+                                );
+                                controller.resolveDeliveryZone();
+                              },
                             ),
                           ),
                         if (deliveryEnabled &&
@@ -351,12 +375,13 @@ class _CheckoutDetailsScreenState
                                   _deliveryType ==
                                       DeliveryType
                                           .pickup,
-                              onTap: () =>
-                                  setState(
-                                () => _deliveryType =
-                                    DeliveryType
-                                        .pickup,
-                              ),
+                              onTap: () {
+                                setState(
+                                  () => _deliveryType =
+                                      DeliveryType.pickup,
+                                );
+                                controller.clearDeliveryZone();
+                              },
                             ),
                           ),
                       ],
@@ -365,7 +390,7 @@ class _CheckoutDetailsScreenState
                       height: 16,
                     ),
                     if (_deliveryType ==
-                        DeliveryType.delivery)
+                        DeliveryType.delivery) ...[
                       TextFormField(
                         controller:
                             _addressController,
@@ -383,7 +408,16 @@ class _CheckoutDetailsScreenState
                                             .isEmpty)
                                     ? 'Enter a delivery address'
                                     : null,
-                      )
+                      ),
+                      const SizedBox(height: 12),
+                      _DeliveryZoneStatus(
+                        zone: controller.deliveryZone,
+                        loading:
+                            controller.resolvingDeliveryZone,
+                        error:
+                            controller.deliveryLocationError,
+                      ),
+                    ]
                     else
                       _BranchPicker(
                         locations:
@@ -548,15 +582,34 @@ class _CheckoutDetailsScreenState
                       settings.currency,
                     ),
                   ),
+                  if (_deliveryType ==
+                          DeliveryType.delivery &&
+                      controller.deliveryZone != null) ...[
+                    const SizedBox(height: 8),
+                    _SummaryRow(
+                      label: 'Delivery',
+                      value:
+                          CurrencyFormatter.format(
+                        controller.deliveryZone!.deliveryFee,
+                        settings.currency,
+                      ),
+                    ),
+                  ],
                   const Divider(
                     height: 28,
                   ),
                   _SummaryRow(
                     label: 'Total',
                     value:
-                        CurrencyFormatter
-                            .format(
-                      totals.total,
+                        CurrencyFormatter.format(
+                      totals.total +
+                          (_deliveryType ==
+                                      DeliveryType.delivery
+                                  ? (controller
+                                          .deliveryZone
+                                          ?.deliveryFee ??
+                                      0)
+                                  : 0),
                       settings.currency,
                     ),
                     emphasized: true,
@@ -594,7 +647,8 @@ class _CheckoutDetailsScreenState
                             : 'Place Order',
                     onPressed:
                         closed ||
-                                !minimumReached
+                                !minimumReached ||
+                                !deliveryReady
                             ? null
                             : _submit,
                   ),
@@ -754,6 +808,31 @@ class _CheckoutDetailsScreenState
       return;
     }
 
+    if (_deliveryType == DeliveryType.delivery &&
+        (controller.deliveryZone == null ||
+            controller.deliveryLatitude == null ||
+            controller.deliveryLongitude == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('We could not determine your delivery area yet.'),
+        ),
+      );
+      return;
+    }
+
+    if (_deliveryType == DeliveryType.delivery &&
+        controller.deliveryZone != null &&
+        totals.subtotal < controller.deliveryZone!.minOrderAmount) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Minimum order for ${controller.deliveryZone!.name} is ${CurrencyFormatter.format(controller.deliveryZone!.minOrderAmount, settings.currency)}',
+          ),
+        ),
+      );
+      return;
+    }
+
     final info = CustomerInfo(
       name:
           _nameController.text.trim(),
@@ -783,6 +862,16 @@ class _CheckoutDetailsScreenState
               : '',
       scheduledFor:
           _scheduledFor,
+      deliveryZoneId:
+          controller.deliveryZone?.id,
+      deliveryZoneName:
+          controller.deliveryZone?.name,
+      deliveryFee:
+          controller.deliveryZone?.deliveryFee ?? 0,
+      deliveryLatitude:
+          controller.deliveryLatitude,
+      deliveryLongitude:
+          controller.deliveryLongitude,
     );
 
     if (_paymentMethod ==
@@ -1082,5 +1171,116 @@ class _BranchPicker
         },
       ).toList(),
     );
+  }
+}
+
+class _DeliveryZoneStatus extends StatelessWidget {
+  const _DeliveryZoneStatus({
+    required this.zone,
+    required this.loading,
+    required this.error,
+  });
+
+  final DeliveryZone? zone;
+  final bool loading;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (loading) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text('Detecting your delivery area...'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (error != null) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.errorContainer,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.location_off_outlined,
+              color: theme.colorScheme.onErrorContainer,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                error!,
+                style: TextStyle(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (zone != null) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.location_on_outlined,
+              color: theme.colorScheme.onPrimaryContainer,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    zone!.name,
+                    style: TextStyle(
+                      color: theme.colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Delivery area detected automatically.',
+                    style: TextStyle(
+                      color: theme.colorScheme.onPrimaryContainer,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 }
