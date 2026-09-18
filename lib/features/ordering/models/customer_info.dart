@@ -12,6 +12,11 @@ class CustomerInfo {
   final PaymentMethod paymentMethod;
   final String notes;
   final DateTime? scheduledFor;
+  final String? deliveryZoneId;
+  final String? deliveryZoneName;
+  final double deliveryFee;
+  final double? deliveryLatitude;
+  final double? deliveryLongitude;
 
   const CustomerInfo({
     required this.name,
@@ -22,5 +27,10 @@ class CustomerInfo {
     required this.paymentMethod,
     this.notes = '',
     this.scheduledFor,
+    this.deliveryZoneId,
+    this.deliveryZoneName,
+    this.deliveryFee = 0,
+    this.deliveryLatitude,
+    this.deliveryLongitude,
   });
 }
