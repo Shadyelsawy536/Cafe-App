@@ -1449,9 +1449,23 @@ class OrderingController extends ChangeNotifier {
   /// status is set later, server-side, by payment-webhook — never by
   /// anything the client does after this call returns.
   Future<String> initiatePaymobPayment(String orderId) async {
+    final redirectUri = Uri.parse(
+      TenantConfig.paymentRedirectBaseUrl,
+    );
+
+    // Native Flutter requests do not have a browser Origin header.
+    // create-payment validates redirectUrl against Origin, so send the
+    // same fixed storefront origin explicitly and never accept a user-
+    // supplied redirect target.
     final response = await _client.functions.invoke(
       'create-payment',
-      body: {'orderId': orderId},
+      headers: {
+        'Origin': redirectUri.origin,
+      },
+      body: {
+        'orderId': orderId,
+        'redirectUrl': redirectUri.toString(),
+      },
     );
 
     final data = response.data;
