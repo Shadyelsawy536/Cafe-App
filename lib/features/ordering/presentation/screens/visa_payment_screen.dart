@@ -23,6 +23,7 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
   String? _error;
   String? _checkoutUrl;
   String? _orderId;
+  bool _handlingReturn = false;
   WebViewController? _webController;
 
   @override
@@ -55,11 +56,16 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
           NavigationDelegate(
             onNavigationRequest: (request) {
               final uri = Uri.tryParse(request.url);
-              final returnedOrderId = uri?.queryParameters['order'];
+              final redirectOrigin =
+                  Uri.parse(TenantConfig.paymentRedirectBaseUrl).origin;
 
-              // Paymob's redirect is only a signal to check the server-side
-              // payment state. Never rebuild/reload the Paymob WebView.
-              if (_orderId != null && returnedOrderId == _orderId) {
+              // Paymob returns to the storefront URL after payment. In the
+              // native app, never render that website inside the WebView.
+              // Treat the storefront return as a signal to verify this
+              // exact native order server-side.
+              if (!_handlingReturn &&
+                  uri != null &&
+                  uri.origin == redirectOrigin) {
                 unawaited(_onPaymentReturned());
                 return NavigationDecision.prevent;
               }
@@ -86,7 +92,9 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
   }
 
   Future<void> _onPaymentReturned() async {
-    if (_orderId == null || !mounted) return;
+    if (_orderId == null || !mounted || _handlingReturn) return;
+
+    _handlingReturn = true;
 
     // The Paymob redirect only tells us that Paymob sent the browser back.
     // The payment-webhook is the authoritative source of payment success.
@@ -125,6 +133,7 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
     if (!mounted) return;
 
     if (!paid) {
+      _handlingReturn = false;
       setState(() {
         _starting = false;
         _error =
