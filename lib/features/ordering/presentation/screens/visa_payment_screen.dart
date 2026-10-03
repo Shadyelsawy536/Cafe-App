@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../models/customer_info.dart';
@@ -58,7 +61,54 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
     }
   }
 
-  void _onPaymentReturned() {
+  Future<void> _onPaymentReturned() async {
+    if (_orderId == null || !mounted) return;
+
+    // The Paymob redirect only tells us that Paymob sent the browser back.
+    // The payment-webhook is the authoritative source of payment success.
+    setState(() {
+      _starting = true;
+      _error = null;
+    });
+
+    final deadline = DateTime.now().add(
+      const Duration(seconds: 30),
+    );
+
+    var paid = false;
+
+    while (mounted && DateTime.now().isBefore(deadline)) {
+      try {
+        final row = await Supabase.instance.client
+            .from('orders')
+            .select('payment_verified')
+            .eq('id', _orderId!)
+            .maybeSingle();
+
+        if (row?['payment_verified'] == true) {
+          paid = true;
+          break;
+        }
+      } catch (e) {
+        debugPrint('PAYMENT CONFIRMATION CHECK ERROR: $e');
+      }
+
+      await Future<void>.delayed(
+        const Duration(seconds: 1),
+      );
+    }
+
+    if (!mounted) return;
+
+    if (!paid) {
+      setState(() {
+        _starting = false;
+        _error =
+            'Payment was not confirmed yet. Please check your payment status and try again.';
+      });
+      return;
+    }
+
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const ReceiptScreen()),
     );
@@ -106,7 +156,7 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
             // rather than /order/<id>. Catch that redirect inside the WebView
             // and return to the native receipt screen.
             if (_orderId != null && returnedOrderId == _orderId) {
-              _onPaymentReturned();
+              unawaited(_onPaymentReturned());
               return NavigationDecision.prevent;
             }
 
