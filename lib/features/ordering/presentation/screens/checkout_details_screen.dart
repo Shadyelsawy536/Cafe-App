@@ -65,6 +65,10 @@ class _CheckoutDetailsScreenState
     final controller =
         context.read<OrderingController>();
 
+    // Every checkout screen represents a new checkout attempt.
+    // Do not carry the previous order's success state into a new order.
+    controller.resetCheckout();
+
     unawaited(controller.refreshAvailability());
 
     final previous =
