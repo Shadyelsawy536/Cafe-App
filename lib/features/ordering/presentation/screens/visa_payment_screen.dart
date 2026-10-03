@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../../../core/config/tenant_config.dart';
 import '../../models/customer_info.dart';
 import '../controllers/ordering_controller.dart';
 import 'receipt_screen.dart';
