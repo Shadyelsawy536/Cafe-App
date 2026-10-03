@@ -99,10 +99,17 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: (request) {
-            if (request.url.contains('/order/' + (_orderId ?? ''))) {
+            final uri = Uri.tryParse(request.url);
+            final returnedOrderId = uri?.queryParameters['order'];
+
+            // Paymob returns to the storefront as ?restaurant=cafe&order=...
+            // rather than /order/<id>. Catch that redirect inside the WebView
+            // and return to the native receipt screen.
+            if (_orderId != null && returnedOrderId == _orderId) {
               _onPaymentReturned();
               return NavigationDecision.prevent;
             }
+
             return NavigationDecision.navigate;
           },
         ),
