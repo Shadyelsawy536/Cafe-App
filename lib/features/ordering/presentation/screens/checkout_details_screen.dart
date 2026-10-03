@@ -905,6 +905,12 @@ class _CheckoutDetailsScreenState
         ),
       );
 
+      if (!mounted) return;
+
+      // If payment was cancelled/failed and we returned to checkout,
+      // do not leave the previous order's success state on the button.
+      controller.resetCheckout();
+
       return;
     }
 
