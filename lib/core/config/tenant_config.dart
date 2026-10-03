@@ -4,4 +4,9 @@
 /// repository/controller layer needs to change to support that later.
 class TenantConfig {
   static const restaurantId = 'e6323840-9644-471b-8964-203b76498a80';
+
+  /// Public customer storefront used as the Paymob return target for the
+  /// native app. The order id is added by the create-payment Edge Function.
+  static const paymentRedirectBaseUrl =
+      'https://shadyelsawy536.github.io/cafe-website/?restaurant=cafe';
 }
