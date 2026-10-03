@@ -23,6 +23,7 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
   String? _error;
   String? _checkoutUrl;
   String? _orderId;
+  WebViewController? _webController;
 
   @override
   void initState() {
@@ -48,8 +49,31 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
     try {
       final checkoutUrl = await controller.initiatePaymobPayment(_orderId!);
       if (!mounted) return;
+      final webController = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onNavigationRequest: (request) {
+              final uri = Uri.tryParse(request.url);
+              final returnedOrderId = uri?.queryParameters['order'];
+
+              // Paymob's redirect is only a signal to check the server-side
+              // payment state. Never rebuild/reload the Paymob WebView.
+              if (_orderId != null && returnedOrderId == _orderId) {
+                unawaited(_onPaymentReturned());
+                return NavigationDecision.prevent;
+              }
+
+              return NavigationDecision.navigate;
+            },
+          ),
+        )
+        ..loadRequest(Uri.parse(checkoutUrl));
+
+      if (!mounted) return;
       setState(() {
         _checkoutUrl = checkoutUrl;
+        _webController = webController;
         _starting = false;
       });
     } catch (e) {
@@ -144,27 +168,12 @@ class _VisaPaymentScreenState extends State<VisaPaymentScreen> {
       );
     }
 
-    final webController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onNavigationRequest: (request) {
-            final uri = Uri.tryParse(request.url);
-            final returnedOrderId = uri?.queryParameters['order'];
-
-            // Paymob returns to the storefront as ?restaurant=cafe&order=...
-            // rather than /order/<id>. Catch that redirect inside the WebView
-            // and return to the native receipt screen.
-            if (_orderId != null && returnedOrderId == _orderId) {
-              unawaited(_onPaymentReturned());
-              return NavigationDecision.prevent;
-            }
-
-            return NavigationDecision.navigate;
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse(_checkoutUrl!));
+    final webController = _webController;
+    if (webController == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
