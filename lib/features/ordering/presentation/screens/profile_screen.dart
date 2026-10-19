@@ -22,10 +22,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    final info = context.read<OrderingController>().lastCustomerInfo;
+    final info = context.read<OrderingController>().savedCustomerProfile;
     _nameController = TextEditingController(text: info?.name ?? '');
     _phoneController = TextEditingController(text: info?.phone ?? '');
     _addressController = TextEditingController(text: info?.address ?? '');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadSavedDetails();
+    });
+  }
+
+  Future<void> _loadSavedDetails() async {
+    final controller = context.read<OrderingController>();
+    await controller.loadSavedProfile();
+    if (!mounted) return;
+    final info = controller.savedCustomerProfile;
+    if (info == null) return;
+    setState(() {
+      _nameController.text = info.name;
+      _phoneController.text = info.phone;
+      _addressController.text = info.address ?? '';
+    });
   }
 
   @override
@@ -110,21 +126,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _save() {
+  Future<void> _save() async {
     final controller = context.read<OrderingController>();
-    controller.updateSavedProfile(
-      CustomerInfo(
-        name: _nameController.text.trim(),
-        phone: _phoneController.text.trim(),
-        deliveryType: controller.lastCustomerInfo?.deliveryType ?? DeliveryType.delivery,
-        address: _addressController.text.trim(),
-        pickupBranch: controller.lastCustomerInfo?.pickupBranch,
-        paymentMethod: controller.lastCustomerInfo?.paymentMethod ?? PaymentMethod.cash,
-      ),
-    );
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile saved')),
-    );
+    try {
+      await controller.updateSavedProfile(
+        CustomerInfo(
+          name: _nameController.text.trim(),
+          phone: _phoneController.text.trim(),
+          deliveryType: DeliveryType.delivery,
+          address: _addressController.text.trim(),
+          paymentMethod: PaymentMethod.cash,
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.read<AuthController>().isSignedIn
+                ? 'Profile saved and synced'
+                : 'Profile saved on this device',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Saved on this device, but cloud sync failed. Please try again when online.'),
+        ),
+      );
+    }
   }
 }
 
