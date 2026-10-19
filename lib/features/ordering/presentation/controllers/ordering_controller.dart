@@ -1137,11 +1137,21 @@ class OrderingController extends ChangeNotifier {
       final storageScope = userId + ':' + TenantConfig.restaurantId;
       final fingerprint = jsonEncode(requestParams);
       final prefs = await SharedPreferences.getInstance();
-      final keyPreference = 'checkout_idempotency_key:' + storageScope;
-      final fingerprintPreference = 'checkout_request_fingerprint:' + storageScope;
-
-      final savedKey = prefs.getString(keyPreference);
-      final savedFingerprint = prefs.getString(fingerprintPreference);
+      final pendingPreference = 'checkout_pending:' + storageScope;
+      final savedAttemptJson = prefs.getString(pendingPreference);
+      Map<String, dynamic>? savedAttempt;
+      if (savedAttemptJson != null) {
+        try {
+          final decoded = jsonDecode(savedAttemptJson);
+          if (decoded is Map<String, dynamic>) {
+            savedAttempt = decoded;
+          }
+        } catch (_) {
+          // Corrupt local state is discarded by generating a fresh key below.
+        }
+      }
+      final savedKey = savedAttempt?['key'] as String?;
+      final savedFingerprint = savedAttempt?['fingerprint'] as String?;
 
       if (_checkoutStorageScope != storageScope ||
           _checkoutRequestFingerprint != fingerprint ||
@@ -1150,8 +1160,13 @@ class OrderingController extends ChangeNotifier {
           _checkoutIdempotencyKey = savedKey;
         } else {
           _checkoutIdempotencyKey = _generateIdempotencyKey();
-          await prefs.setString(keyPreference, _checkoutIdempotencyKey!);
-          await prefs.setString(fingerprintPreference, fingerprint);
+          await prefs.setString(
+            pendingPreference,
+            jsonEncode({
+              'key': _checkoutIdempotencyKey,
+              'fingerprint': fingerprint,
+            }),
+          );
         }
         _checkoutRequestFingerprint = fingerprint;
         _checkoutStorageScope = storageScope;
@@ -1204,8 +1219,7 @@ class OrderingController extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final storageScope = _checkoutStorageScope;
       if (storageScope != null) {
-        await prefs.remove('checkout_idempotency_key:' + storageScope);
-        await prefs.remove('checkout_request_fingerprint:' + storageScope);
+        await prefs.remove('checkout_pending:' + storageScope);
       }
       _checkoutIdempotencyKey = null;
       _checkoutRequestFingerprint = null;
