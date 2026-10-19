@@ -77,6 +77,7 @@ class OrderingController extends ChangeNotifier {
   String? _activeSavedProfileUserId;
   Future<void>? _savedProfileLoad;
   String? _savedProfileLoadUserId;
+  int _savedProfileRevision = 0;
 
   String? _checkoutIdempotencyKey;
   String? _checkoutRequestFingerprint;
@@ -183,6 +184,7 @@ class OrderingController extends ChangeNotifier {
         final nextUserId = session?.user.id;
         if (nextUserId != _activeSavedProfileUserId) {
           _activeSavedProfileUserId = nextUserId;
+          _savedProfileRevision++;
           lastCustomerInfo = null;
           savedCustomerProfile = null;
           unawaited(loadSavedProfile());
@@ -1594,6 +1596,7 @@ class OrderingController extends ChangeNotifier {
   }
 
   Future<void> _loadSavedProfile(String? userId) async {
+    final revision = _savedProfileRevision;
     final prefs = await SharedPreferences.getInstance();
     final cacheKey = _savedProfileCacheKey(userId);
     CustomerInfo? cached;
@@ -1608,6 +1611,7 @@ class OrderingController extends ChangeNotifier {
     }
 
     if (userId == null) {
+      if (_disposed || revision != _savedProfileRevision) return;
       if (!_disposed) {
         savedCustomerProfile = cached;
         notifyListeners();
@@ -1620,7 +1624,7 @@ class OrderingController extends ChangeNotifier {
           .select('full_name, phone, address')
           .eq('id', userId)
           .maybeSingle();
-      if (_disposed || _client.auth.currentUser?.id != userId) return;
+      if (_disposed || revision != _savedProfileRevision || _client.auth.currentUser?.id != userId) return;
       final rawProfileName = row?['full_name'] as String?;
       final rawProfilePhone = row?['phone'] as String?;
       final rawProfileAddress = row?['address'] as String?;
@@ -1644,13 +1648,14 @@ class OrderingController extends ChangeNotifier {
       notifyListeners();
     } catch (error) {
       debugPrint('Saved profile load failed; using local cache if available: $error');
-      if (_disposed || _client.auth.currentUser?.id != userId) return;
+      if (_disposed || revision != _savedProfileRevision || _client.auth.currentUser?.id != userId) return;
       savedCustomerProfile = cached;
       notifyListeners();
     }
   }
 
   Future<void> updateSavedProfile(CustomerInfo info) async {
+    _savedProfileRevision++;
     final userId = _client.auth.currentUser?.id;
     final prefs = await SharedPreferences.getInstance();
     savedCustomerProfile = CustomerInfo(
