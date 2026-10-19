@@ -1617,7 +1617,7 @@ class OrderingController extends ChangeNotifier {
 
     try {
       final row = await _client.from('profiles')
-          .select('full_name, phone')
+          .select('full_name, phone, address')
           .eq('id', userId)
           .maybeSingle();
       if (_disposed || _client.auth.currentUser?.id != userId) return;
@@ -1627,7 +1627,8 @@ class OrderingController extends ChangeNotifier {
       final phone = (row?['phone'] as String? ?? '').trim().isNotEmpty
           ? (row!['phone'] as String).trim()
           : (cached?.phone ?? '');
-      final address = cached?.address ?? '';
+      final profileAddress = (row?['address'] as String? ?? '').trim();
+      final address = profileAddress.isNotEmpty ? profileAddress : (cached?.address ?? '');
       if (name.isNotEmpty || phone.isNotEmpty || address.isNotEmpty || row != null || cached != null) {
         savedCustomerProfile = CustomerInfo(
           name: name,
@@ -1669,6 +1670,7 @@ class OrderingController extends ChangeNotifier {
       'id': userId,
       'full_name': savedCustomerProfile!.name,
       'phone': savedCustomerProfile!.phone,
+      'address': savedCustomerProfile!.address ?? '',
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     });
   }
