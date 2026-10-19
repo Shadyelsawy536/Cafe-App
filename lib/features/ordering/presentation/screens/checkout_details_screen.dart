@@ -71,22 +71,17 @@ class _CheckoutDetailsScreenState
 
     unawaited(controller.refreshAvailability());
 
-    final previous =
-        controller.lastCustomerInfo;
+    final previous = controller.lastCustomerInfo;
+    final saved = controller.savedCustomerProfile;
 
-    _nameController =
-        TextEditingController(
-      text: previous?.name ?? '',
+    _nameController = TextEditingController(
+      text: saved?.name.trim().isNotEmpty == true ? saved!.name : (previous?.name ?? ''),
     );
-
-    _phoneController =
-        TextEditingController(
-      text: previous?.phone ?? '',
+    _phoneController = TextEditingController(
+      text: saved?.phone.trim().isNotEmpty == true ? saved!.phone : (previous?.phone ?? ''),
     );
-
-    _addressController =
-        TextEditingController(
-      text: previous?.address ?? '',
+    _addressController = TextEditingController(
+      text: saved?.address?.trim().isNotEmpty == true ? saved!.address! : (previous?.address ?? ''),
     );
 
     _notesController =
