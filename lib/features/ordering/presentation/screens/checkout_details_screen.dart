@@ -57,6 +57,9 @@ class _CheckoutDetailsScreenState
   String? _pickupBranch;
 
   DateTime? _scheduledFor;
+  late final String _initialName;
+  late final String _initialPhone;
+  late final String _initialAddress;
 
   @override
   void initState() {
@@ -83,6 +86,9 @@ class _CheckoutDetailsScreenState
     _addressController = TextEditingController(
       text: saved?.address?.trim().isNotEmpty == true ? saved!.address! : (previous?.address ?? ''),
     );
+    _initialName = _nameController.text;
+    _initialPhone = _phoneController.text;
+    _initialAddress = _addressController.text;
 
     _notesController =
         TextEditingController(
@@ -109,12 +115,33 @@ class _CheckoutDetailsScreenState
     _scheduledFor =
         previous?.scheduledFor;
 
+    unawaited(_loadSavedDetails());
+
     if (_deliveryType == DeliveryType.delivery) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         context.read<OrderingController>().resolveDeliveryZone();
       });
     }
+  }
+
+  Future<void> _loadSavedDetails() async {
+    final controller = context.read<OrderingController>();
+    await controller.loadSavedProfile();
+    if (!mounted) return;
+    final saved = controller.savedCustomerProfile;
+    if (saved == null) return;
+    setState(() {
+      if (_nameController.text == _initialName && saved.name.trim().isNotEmpty) {
+        _nameController.text = saved.name;
+      }
+      if (_phoneController.text == _initialPhone && saved.phone.trim().isNotEmpty) {
+        _phoneController.text = saved.phone;
+      }
+      if (_addressController.text == _initialAddress && (saved.address?.trim().isNotEmpty ?? false)) {
+        _addressController.text = saved.address ?? '';
+      }
+    });
   }
 
   @override
