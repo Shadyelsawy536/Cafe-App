@@ -1621,14 +1621,14 @@ class OrderingController extends ChangeNotifier {
           .eq('id', userId)
           .maybeSingle();
       if (_disposed || _client.auth.currentUser?.id != userId) return;
-      final name = (row?['full_name'] as String? ?? '').trim().isNotEmpty
-          ? (row!['full_name'] as String).trim()
+      final rawProfileName = row?['full_name'] as String?;
+      final rawProfilePhone = row?['phone'] as String?;
+      final rawProfileAddress = row?['address'] as String?;
+      final name = rawProfileName != null
+          ? rawProfileName.trim()
           : (cached?.name ?? _client.auth.currentUser?.email?.split('@').first ?? '');
-      final phone = (row?['phone'] as String? ?? '').trim().isNotEmpty
-          ? (row!['phone'] as String).trim()
-          : (cached?.phone ?? '');
-      final profileAddress = (row?['address'] as String? ?? '').trim();
-      final address = profileAddress.isNotEmpty ? profileAddress : (cached?.address ?? '');
+      final phone = rawProfilePhone != null ? rawProfilePhone.trim() : (cached?.phone ?? '');
+      final address = rawProfileAddress != null ? rawProfileAddress : (cached?.address ?? '');
       if (name.isNotEmpty || phone.isNotEmpty || address.isNotEmpty || row != null || cached != null) {
         savedCustomerProfile = CustomerInfo(
           name: name,
