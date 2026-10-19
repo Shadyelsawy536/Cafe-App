@@ -1134,10 +1134,10 @@ class OrderingController extends ChangeNotifier {
         'p_items': items,
       };
 
-      final storageScope = userId + ':' + TenantConfig.restaurantId;
+      final storageScope = '$userId:${TenantConfig.restaurantId}';
       final fingerprint = jsonEncode(requestParams);
       final prefs = await SharedPreferences.getInstance();
-      final pendingPreference = 'checkout_pending:' + storageScope;
+      final pendingPreference = 'checkout_pending:$storageScope';
       final savedAttemptJson = prefs.getString(pendingPreference);
       Map<String, dynamic>? savedAttempt;
       if (savedAttemptJson != null) {
@@ -1216,10 +1216,8 @@ class OrderingController extends ChangeNotifier {
       // Keep the key until the order has been fetched and the checkout state
       // is fully committed locally. If the app is interrupted earlier, retry
       // with the same payload can recover the existing order instead of duplicating it.
-      final prefs = await SharedPreferences.getInstance();
-      final storageScope = _checkoutStorageScope;
-      if (storageScope != null) {
-        await prefs.remove('checkout_pending:' + storageScope);
+      if (_checkoutStorageScope != null) {
+        await prefs.remove('checkout_pending:$_checkoutStorageScope');
       }
       _checkoutIdempotencyKey = null;
       _checkoutRequestFingerprint = null;
