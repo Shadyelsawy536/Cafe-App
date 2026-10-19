@@ -1169,16 +1169,6 @@ class OrderingController extends ChangeNotifier {
         orderId,
       );
 
-      final prefs = await SharedPreferences.getInstance();
-      final storageScope = _checkoutStorageScope;
-      if (storageScope != null) {
-        await prefs.remove('checkout_idempotency_key:' + storageScope);
-        await prefs.remove('checkout_request_fingerprint:' + storageScope);
-      }
-      _checkoutIdempotencyKey = null;
-      _checkoutRequestFingerprint = null;
-      _checkoutStorageScope = null;
-
       orderHistory.insert(
         0,
         order,
@@ -1207,6 +1197,19 @@ class OrderingController extends ChangeNotifier {
       cart.clear();
 
       checkoutStatus = CheckoutStatus.success;
+
+      // Keep the key until the order has been fetched and the checkout state
+      // is fully committed locally. If the app is interrupted earlier, retry
+      // with the same payload can recover the existing order instead of duplicating it.
+      final prefs = await SharedPreferences.getInstance();
+      final storageScope = _checkoutStorageScope;
+      if (storageScope != null) {
+        await prefs.remove('checkout_idempotency_key:' + storageScope);
+        await prefs.remove('checkout_request_fingerprint:' + storageScope);
+      }
+      _checkoutIdempotencyKey = null;
+      _checkoutRequestFingerprint = null;
+      _checkoutStorageScope = null;
     } catch (e) {
       checkoutStatus = CheckoutStatus.idle;
 
