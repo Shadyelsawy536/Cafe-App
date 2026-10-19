@@ -44,7 +44,9 @@ class OrderingController extends ChangeNotifier {
   OrderingController({
     ProductRepository? repository,
   }) : _repository = repository ?? MockProductRepository() {
+    _activeSavedProfileUserId = _client.auth.currentUser?.id;
     _listenToAuthChanges();
+    unawaited(loadSavedProfile());
 
     if (_client.auth.currentSession != null) {
       unawaited(
@@ -72,6 +74,9 @@ class OrderingController extends ChangeNotifier {
 
   bool _realtimeStarted = false;
   bool _disposed = false;
+  String? _activeSavedProfileUserId;
+  Future<void>? _savedProfileLoad;
+  String? _savedProfileLoadUserId;
 
   String? _checkoutIdempotencyKey;
   String? _checkoutRequestFingerprint;
@@ -140,6 +145,7 @@ class OrderingController extends ChangeNotifier {
   final List<Order> orderHistory = [];
 
   CustomerInfo? lastCustomerInfo;
+  CustomerInfo? savedCustomerProfile;
 
   DeliveryZone? deliveryZone;
   bool resolvingDeliveryZone = false;
@@ -173,6 +179,14 @@ class OrderingController extends ChangeNotifier {
           'AUTH REALTIME: ${data.event} | '
           'session=${session != null}',
         );
+
+        final nextUserId = session?.user.id;
+        if (nextUserId != _activeSavedProfileUserId) {
+          _activeSavedProfileUserId = nextUserId;
+          lastCustomerInfo = null;
+          savedCustomerProfile = null;
+          unawaited(loadSavedProfile());
+        }
 
         if (session != null) {
           unawaited(
@@ -1546,11 +1560,117 @@ class OrderingController extends ChangeNotifier {
     return data['checkoutUrl'] as String;
   }
 
-  void updateSavedProfile(
-    CustomerInfo info,
-  ) {
-    lastCustomerInfo = info;
+  String _savedProfileCacheKey(String? userId) =>
+      userId == null ? 'saved_customer_profile:guest' : 'saved_customer_profile:$userId';
+
+  CustomerInfo _savedProfileFromMap(Map<String, dynamic> data) => CustomerInfo(
+        name: data['name'] as String? ?? '',
+        phone: data['phone'] as String? ?? '',
+        address: data['address'] as String? ?? '',
+        deliveryType: DeliveryType.delivery,
+        paymentMethod: PaymentMethod.cash,
+      );
+
+  Map<String, dynamic> _savedProfileToMap(CustomerInfo info) => {
+        'name': info.name,
+        'phone': info.phone,
+        'address': info.address ?? '',
+      };
+
+  Future<void> loadSavedProfile() {
+    final userId = _client.auth.currentUser?.id;
+    if (_savedProfileLoad != null && _savedProfileLoadUserId == userId) {
+      return _savedProfileLoad!;
+    }
+    _savedProfileLoadUserId = userId;
+    final future = _loadSavedProfile(userId);
+    _savedProfileLoad = future;
+    return future.whenComplete(() {
+      if (identical(_savedProfileLoad, future)) {
+        _savedProfileLoad = null;
+        _savedProfileLoadUserId = null;
+      }
+    });
+  }
+
+  Future<void> _loadSavedProfile(String? userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final cacheKey = _savedProfileCacheKey(userId);
+    CustomerInfo? cached;
+    final cachedJson = prefs.getString(cacheKey);
+    if (cachedJson != null) {
+      try {
+        final decoded = jsonDecode(cachedJson);
+        if (decoded is Map<String, dynamic>) cached = _savedProfileFromMap(decoded);
+      } catch (_) {
+        // Ignore an invalid cache and try the remote profile.
+      }
+    }
+
+    if (userId == null) {
+      if (!_disposed) {
+        savedCustomerProfile = cached;
+        notifyListeners();
+      }
+      return;
+    }
+
+    try {
+      final row = await _client.from('profiles')
+          .select('full_name, phone')
+          .eq('id', userId)
+          .maybeSingle();
+      if (_disposed || _client.auth.currentUser?.id != userId) return;
+      final name = (row?['full_name'] as String? ?? '').trim().isNotEmpty
+          ? (row!['full_name'] as String).trim()
+          : (cached?.name ?? _client.auth.currentUser?.email?.split('@').first ?? '');
+      final phone = (row?['phone'] as String? ?? '').trim().isNotEmpty
+          ? (row!['phone'] as String).trim()
+          : (cached?.phone ?? '');
+      final address = cached?.address ?? '';
+      if (name.isNotEmpty || phone.isNotEmpty || address.isNotEmpty || row != null || cached != null) {
+        savedCustomerProfile = CustomerInfo(
+          name: name,
+          phone: phone,
+          address: address,
+          deliveryType: DeliveryType.delivery,
+          paymentMethod: PaymentMethod.cash,
+        );
+        await prefs.setString(cacheKey, jsonEncode(_savedProfileToMap(savedCustomerProfile!)));
+      } else {
+        savedCustomerProfile = null;
+      }
+      notifyListeners();
+    } catch (error) {
+      debugPrint('Saved profile load failed; using local cache if available: $error');
+      if (_disposed || _client.auth.currentUser?.id != userId) return;
+      savedCustomerProfile = cached;
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateSavedProfile(CustomerInfo info) async {
+    final userId = _client.auth.currentUser?.id;
+    final prefs = await SharedPreferences.getInstance();
+    savedCustomerProfile = CustomerInfo(
+      name: info.name.trim(),
+      phone: info.phone.trim(),
+      address: info.address?.trim() ?? '',
+      deliveryType: DeliveryType.delivery,
+      paymentMethod: PaymentMethod.cash,
+    );
     notifyListeners();
+    await prefs.setString(
+      _savedProfileCacheKey(userId),
+      jsonEncode(_savedProfileToMap(savedCustomerProfile!)),
+    );
+    if (userId == null) return;
+    await _client.from('profiles').upsert({
+      'id': userId,
+      'full_name': savedCustomerProfile!.name,
+      'phone': savedCustomerProfile!.phone,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
   }
 
   @override
