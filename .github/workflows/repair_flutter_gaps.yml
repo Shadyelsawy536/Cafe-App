@@ -52,9 +52,12 @@ jobs:
           'p_customer_notes': customerInfo.notes,
           'p_scheduled_for': customerInfo.scheduledFor?.toUtc().toIso8601String(),
 """
-          if old_params not in text:
+          if old_params in text:
+              text = text.replace(old_params, new_params, 1)
+          elif "'place_order_with_location_idempotent'" in text:
+              print('Checkout already uses the idempotent RPC; preserving its parameters.')
+          else:
               raise SystemExit('checkout RPC parameter block not found')
-          text = text.replace(old_params, new_params, 1)
           controller.write_text(text)
 
           home = Path('lib/features/ordering/presentation/screens/home_screen.dart')
