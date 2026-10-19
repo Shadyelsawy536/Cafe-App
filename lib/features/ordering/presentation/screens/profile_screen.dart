@@ -18,6 +18,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _phoneController;
   late final TextEditingController _addressController;
+  late final String _initialName;
+  late final String _initialPhone;
+  late final String _initialAddress;
 
   @override
   void initState() {
@@ -26,6 +29,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _nameController = TextEditingController(text: info?.name ?? '');
     _phoneController = TextEditingController(text: info?.phone ?? '');
     _addressController = TextEditingController(text: info?.address ?? '');
+    _initialName = _nameController.text;
+    _initialPhone = _phoneController.text;
+    _initialAddress = _addressController.text;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _loadSavedDetails();
     });
@@ -38,9 +44,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final info = controller.savedCustomerProfile;
     if (info == null) return;
     setState(() {
-      _nameController.text = info.name;
-      _phoneController.text = info.phone;
-      _addressController.text = info.address ?? '';
+      if (_nameController.text == _initialName) _nameController.text = info.name;
+      if (_phoneController.text == _initialPhone) _phoneController.text = info.phone;
+      if (_addressController.text == _initialAddress) _addressController.text = info.address ?? '';
     });
   }
 
