@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -141,6 +143,11 @@ class OrderingController extends ChangeNotifier {
   double? deliveryLongitude;
 
   Future<void>? _deliveryZoneRequest;
+
+  // Retained across failed network attempts so retrying the same checkout
+  // reuses the same server-side idempotency key.
+  String? _checkoutIdempotencyKey;
+  String? _checkoutRequestFingerprint;
 
   int get cartCount => cart.fold<int>(
         0,
@@ -1049,6 +1056,16 @@ class OrderingController extends ChangeNotifier {
   Future<void> checkout(
     CustomerInfo customerInfo,
   ) async {
+    if (checkoutStatus == CheckoutStatus.processing) {
+      return;
+    }
+
+    if (cart.isEmpty) {
+      checkoutError = 'Your cart is empty.';
+      notifyListeners();
+      return;
+    }
+
     checkoutStatus = CheckoutStatus.processing;
 
     checkoutError = null;
@@ -1099,39 +1116,42 @@ class OrderingController extends ChangeNotifier {
           )
           .toList();
 
-      final orderId =
-          await _client.rpc(
-        'place_order_with_location',
-        params: {
-          'p_restaurant_id':
-              TenantConfig.restaurantId,
-          'p_customer_id': customerId,
-          'p_customer_name': customerInfo.name,
-          'p_customer_phone': customerInfo.phone,
-          'p_delivery_type':
-              customerInfo.deliveryType ==
-                      DeliveryType.delivery
-                  ? 'delivery'
-                  : 'pickup',
-          'p_delivery_address':
-              customerInfo.address,
-          'p_pickup_branch':
-              customerInfo.pickupBranch,
-          'p_payment_method':
-              customerInfo.paymentMethod ==
-                      PaymentMethod.cash
-                  ? 'cash'
-                  : 'visa',
-          'p_customer_notes':
-              customerInfo.notes,
-          'p_scheduled_for':
-              customerInfo.scheduledFor
-                  ?.toUtc()
-                  .toIso8601String(),
-          'p_latitude': customerInfo.deliveryLatitude,
-          'p_longitude': customerInfo.deliveryLongitude,
-          'p_items': items,
-        },
+      final rpcParams = <String, dynamic>{
+        'p_restaurant_id': TenantConfig.restaurantId,
+        'p_customer_id': customerId,
+        'p_customer_name': customerInfo.name,
+        'p_customer_phone': customerInfo.phone,
+        'p_delivery_type':
+            customerInfo.deliveryType == DeliveryType.delivery
+                ? 'delivery'
+                : 'pickup',
+        'p_delivery_address': customerInfo.address,
+        'p_pickup_branch': customerInfo.pickupBranch,
+        'p_payment_method':
+            customerInfo.paymentMethod == PaymentMethod.cash
+                ? 'cash'
+                : 'visa',
+        'p_customer_notes': customerInfo.notes,
+        'p_scheduled_for':
+            customerInfo.scheduledFor?.toUtc().toIso8601String(),
+        'p_latitude': customerInfo.deliveryLatitude,
+        'p_longitude': customerInfo.deliveryLongitude,
+        'p_items': items,
+        'p_coupon_code': null,
+      };
+
+      final requestFingerprint = jsonEncode(rpcParams);
+      if (_checkoutIdempotencyKey == null ||
+          _checkoutRequestFingerprint != requestFingerprint) {
+        _checkoutIdempotencyKey = _newCheckoutIdempotencyKey();
+        _checkoutRequestFingerprint = requestFingerprint;
+      }
+
+      rpcParams['p_idempotency_key'] = _checkoutIdempotencyKey;
+
+      final orderId = await _client.rpc(
+        'place_order_with_location_idempotent',
+        params: rpcParams,
       ) as String;
 
       final order = await _fetchOrderById(
@@ -1165,6 +1185,10 @@ class OrderingController extends ChangeNotifier {
 
       cart.clear();
 
+      // The order is now fetched successfully; a future checkout is a new intent.
+      _checkoutIdempotencyKey = null;
+      _checkoutRequestFingerprint = null;
+
       checkoutStatus = CheckoutStatus.success;
     } catch (e) {
       checkoutStatus = CheckoutStatus.idle;
@@ -1180,6 +1204,21 @@ class OrderingController extends ChangeNotifier {
     if (!_disposed) {
       notifyListeners();
     }
+  }
+
+  String _newCheckoutIdempotencyKey() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    final hex = bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20, 32)}';
   }
 
   Future<void> loadOrderHistory() async {
