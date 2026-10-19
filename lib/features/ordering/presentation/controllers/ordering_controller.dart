@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/config/tenant_config.dart';
 import '../../data/delivery_zone_repository.dart';
@@ -69,6 +72,10 @@ class OrderingController extends ChangeNotifier {
 
   bool _realtimeStarted = false;
   bool _disposed = false;
+
+  String? _checkoutIdempotencyKey;
+  String? _checkoutRequestFingerprint;
+  String? _checkoutStorageScope;
 
   bool loading = true;
 
@@ -1049,6 +1056,14 @@ class OrderingController extends ChangeNotifier {
   Future<void> checkout(
     CustomerInfo customerInfo,
   ) async {
+    if (checkoutStatus == CheckoutStatus.processing) return;
+    if (cart.isEmpty) {
+      checkoutError = 'Your cart is empty.';
+      checkoutStatus = CheckoutStatus.idle;
+      notifyListeners();
+      return;
+    }
+
     checkoutStatus = CheckoutStatus.processing;
 
     checkoutError = null;
@@ -1099,38 +1114,69 @@ class OrderingController extends ChangeNotifier {
           )
           .toList();
 
-      final orderId =
-          await _client.rpc(
-        'place_order_with_location',
+      final requestParams = <String, dynamic>{
+        'p_restaurant_id': TenantConfig.restaurantId,
+        'p_customer_id': customerId,
+        'p_customer_name': customerInfo.name,
+        'p_customer_phone': customerInfo.phone,
+        'p_delivery_type':
+            customerInfo.deliveryType == DeliveryType.delivery
+                ? 'delivery'
+                : 'pickup',
+        'p_delivery_address': customerInfo.address,
+        'p_pickup_branch': customerInfo.pickupBranch,
+        'p_payment_method':
+            customerInfo.paymentMethod == PaymentMethod.cash ? 'cash' : 'visa',
+        'p_customer_notes': customerInfo.notes,
+        'p_scheduled_for': customerInfo.scheduledFor?.toUtc().toIso8601String(),
+        'p_latitude': customerInfo.deliveryLatitude,
+        'p_longitude': customerInfo.deliveryLongitude,
+        'p_items': items,
+      };
+
+      final storageScope = '$userId:${TenantConfig.restaurantId}';
+      final fingerprint = jsonEncode(requestParams);
+      final prefs = await SharedPreferences.getInstance();
+      final pendingPreference = 'checkout_pending:$storageScope';
+      final savedAttemptJson = prefs.getString(pendingPreference);
+      Map<String, dynamic>? savedAttempt;
+      if (savedAttemptJson != null) {
+        try {
+          final decoded = jsonDecode(savedAttemptJson);
+          if (decoded is Map<String, dynamic>) {
+            savedAttempt = decoded;
+          }
+        } catch (_) {
+          // Corrupt local state is discarded by generating a fresh key below.
+        }
+      }
+      final savedKey = savedAttempt?['key'] as String?;
+      final savedFingerprint = savedAttempt?['fingerprint'] as String?;
+
+      if (_checkoutStorageScope != storageScope ||
+          _checkoutRequestFingerprint != fingerprint ||
+          _checkoutIdempotencyKey == null) {
+        if (savedKey != null && savedFingerprint == fingerprint) {
+          _checkoutIdempotencyKey = savedKey;
+        } else {
+          _checkoutIdempotencyKey = _generateIdempotencyKey();
+          await prefs.setString(
+            pendingPreference,
+            jsonEncode({
+              'key': _checkoutIdempotencyKey,
+              'fingerprint': fingerprint,
+            }),
+          );
+        }
+        _checkoutRequestFingerprint = fingerprint;
+        _checkoutStorageScope = storageScope;
+      }
+
+      final orderId = await _client.rpc(
+        'place_order_with_location_idempotent',
         params: {
-          'p_restaurant_id':
-              TenantConfig.restaurantId,
-          'p_customer_id': customerId,
-          'p_customer_name': customerInfo.name,
-          'p_customer_phone': customerInfo.phone,
-          'p_delivery_type':
-              customerInfo.deliveryType ==
-                      DeliveryType.delivery
-                  ? 'delivery'
-                  : 'pickup',
-          'p_delivery_address':
-              customerInfo.address,
-          'p_pickup_branch':
-              customerInfo.pickupBranch,
-          'p_payment_method':
-              customerInfo.paymentMethod ==
-                      PaymentMethod.cash
-                  ? 'cash'
-                  : 'visa',
-          'p_customer_notes':
-              customerInfo.notes,
-          'p_scheduled_for':
-              customerInfo.scheduledFor
-                  ?.toUtc()
-                  .toIso8601String(),
-          'p_latitude': customerInfo.deliveryLatitude,
-          'p_longitude': customerInfo.deliveryLongitude,
-          'p_items': items,
+          'p_idempotency_key': _checkoutIdempotencyKey,
+          ...requestParams,
         },
       ) as String;
 
@@ -1166,6 +1212,16 @@ class OrderingController extends ChangeNotifier {
       cart.clear();
 
       checkoutStatus = CheckoutStatus.success;
+
+      // Keep the key until the order has been fetched and the checkout state
+      // is fully committed locally. If the app is interrupted earlier, retry
+      // with the same payload can recover the existing order instead of duplicating it.
+      if (_checkoutStorageScope != null) {
+        await prefs.remove('checkout_pending:$_checkoutStorageScope');
+      }
+      _checkoutIdempotencyKey = null;
+      _checkoutRequestFingerprint = null;
+      _checkoutStorageScope = null;
     } catch (e) {
       checkoutStatus = CheckoutStatus.idle;
 
@@ -1180,6 +1236,17 @@ class OrderingController extends ChangeNotifier {
     if (!_disposed) {
       notifyListeners();
     }
+  }
+
+  String _generateIdempotencyKey() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20, 32)}';
   }
 
   Future<void> loadOrderHistory() async {
