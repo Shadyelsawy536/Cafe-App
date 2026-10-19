@@ -2,6 +2,15 @@ name: Android APK build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "lib/**"
+      - "android/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - ".github/workflows/android-apk.yml"
   pull_request:
     paths:
       - "lib/**"
