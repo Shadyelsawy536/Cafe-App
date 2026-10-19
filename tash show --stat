@@ -1,0 +1,158 @@
+[1mdiff --git a/pubspec.lock b/pubspec.lock[m
+[1mindex 071dfcb..1b99372 100644[m
+[1m--- a/pubspec.lock[m
+[1m+++ b/pubspec.lock[m
+[36m@@ -177,6 +177,14 @@[m [mpackages:[m
+       url: "https://pub.dev"[m
+     source: hosted[m
+     version: "3.4.1"[m
+[32m+[m[32m  dbus:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: dbus[m
+[32m+[m[32m      sha256: a48d5da28e89bd02196e80d81ed8d7954923d00a0f4a68cc20b575038f023383[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "0.7.15"[m
+   fake_async:[m
+     dependency: transitive[m
+     description:[m
+[36m@@ -193,6 +201,14 @@[m [mpackages:[m
+       url: "https://pub.dev"[m
+     source: hosted[m
+     version: "2.2.0"[m
+[32m+[m[32m  ffi_leak_tracker:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: ffi_leak_tracker[m
+[32m+[m[32m      sha256: "4093d4ef9ca06ffe2786e73bfb25e22aa92112b9bb4ec941f11e3e6b61489a97"[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "0.1.2"[m
+   file:[m
+     dependency: transitive[m
+     description:[m
+[36m@@ -304,6 +320,70 @@[m [mpackages:[m
+       url: "https://pub.dev"[m
+     source: hosted[m
+     version: "2.7.1"[m
+[32m+[m[32m  geoclue:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: geoclue[m
+[32m+[m[32m      sha256: c2a998c77474fc57aa00c6baa2928e58f4b267649057a1c76738656e9dbd2a7f[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "0.1.1"[m
+[32m+[m[32m  geolocator:[m
+[32m+[m[32m    dependency: "direct main"[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: geolocator[m
+[32m+[m[32m      sha256: e146a6d63776582651e97a79cbe459f8e1211b100101fadcd84db83361fa599f[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "14.0.3"[m
+[32m+[m[32m  geolocator_android:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: geolocator_android[m
+[32m+[m[32m      sha256: "86ea1654e4f61ff51466848e91c116b422d6010ea269fda0fbe1af7e9e742ce1"[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "5.0.3"[m
+[32m+[m[32m  geolocator_apple:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: geolocator_apple[m
+[32m+[m[32m      sha256: "853803d6bb1713c094e935b4a5ae5f19c0308acf81da13fa9ff84fb4c70c0b73"[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "2.3.14"[m
+[32m+[m[32m  geolocator_linux:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: geolocator_linux[m
+[32m+[m[32m      sha256: "3da7420f11c3496511a5bd3c18fd67b88e5659f12e46b7ce00a788f6996e850a"[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "0.2.6"[m
+[32m+[m[32m  geolocator_platform_interface:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: geolocator_platform_interface[m
+[32m+[m[32m      sha256: "94db8255dc183d268765df682580440617ca35877fc82cacb5420ad03b86198d"[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "4.3.0"[m
+[32m+[m[32m  geolocator_web:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: geolocator_web[m
+[32m+[m[32m      sha256: "19e485a0f8d6a88abcf9c53cba3a4105e14b7435ed8ac1c108c067b938fe8429"[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "4.1.4"[m
+[32m+[m[32m  geolocator_windows:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: geolocator_windows[m
+[32m+[m[32m      sha256: "175435404d20278ffd220de83c2ca293b73db95eafbdc8131fe8609be1421eb6"[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "0.2.5"[m
+   gotrue:[m
+     dependency: transitive[m
+     description:[m
+[36m@@ -312,6 +392,14 @@[m [mpackages:[m
+       url: "https://pub.dev"[m
+     source: hosted[m
+     version: "2.27.2"[m
+[32m+[m[32m  gsettings:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: gsettings[m
+[32m+[m[32m      sha256: "1b0ce661f5436d2db1e51f3c4295a49849f03d304003a7ba177d01e3a858249c"[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "0.2.8"[m
+   gtk:[m
+     dependency: transitive[m
+     description:[m
+[36m@@ -488,6 +576,22 @@[m [mpackages:[m
+       url: "https://pub.dev"[m
+     source: hosted[m
+     version: "3.0.0"[m
+[32m+[m[32m  package_info_plus:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: package_info_plus[m
+[32m+[m[32m      sha256: "127e1751e37ffb2ff4658beeaca77bad0c27bf5f932bd3a501c2296926d4b481"[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "10.2.1"[m
+[32m+[m[32m  package_info_plus_platform_interface:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: package_info_plus_platform_interface[m
+[32m+[m[32m      sha256: db762cb2f4f25ee60fb6359773861b0f199e00b90d237bd85a76a1e806b46ef4[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "4.1.0"[m
+   passkeys_platform_interface:[m
+     dependency: transitive[m
+     description:[m
+[36m@@ -949,6 +1053,14 @@[m [mpackages:[m
+       url: "https://pub.dev"[m
+     source: hosted[m
+     version: "3.0.3"[m
+[32m+[m[32m  win32:[m
+[32m+[m[32m    dependency: transitive[m
+[32m+[m[32m    description:[m
+[32m+[m[32m      name: win32[m
+[32m+[m[32m      sha256: a0b93865d5644f11cf6a8c3f6db909f1ec168958b5805f6cc684adea957cd63d[m
+[32m+[m[32m      url: "https://pub.dev"[m
+[32m+[m[32m    source: hosted[m
+[32m+[m[32m    version: "6.4.0"[m
+   xdg_directories:[m
+     dependency: transitive[m
+     description:[m
