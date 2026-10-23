@@ -14,18 +14,31 @@ workflows:
     artifacts:
       - build/app/outputs/flutter-apk/app-release.apk
 
-  ios-unsigned:
-    name: Cafe App - iOS Unsigned Build
+  ios-simulator:
+    name: Cafe App - iOS Simulator (Sauce Labs)
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
       flutter: stable
       xcode: latest
+      cocoapods: default
     scripts:
       - name: Get Flutter packages
         script: flutter pub get
-      - name: Build iOS without code signing
-        script: flutter build ios --release --no-codesign
+      - name: Install CocoaPods dependencies
+        script: |
+          if find ios -name Podfile -print -quit | grep -q .; then
+            find ios -name Podfile -execdir pod install \\;
+          else
+            echo "No Podfile found under ios/. Flutter/Xcode will report if the iOS project setup is incomplete."
+          fi
+      - name: Build iOS Simulator app without code signing
+        script: flutter build ios --simulator --debug
+      - name: Package Simulator app for upload
+        script: |
+          test -d build/ios/iphonesimulator/Runner.app
+          ditto -c -k --sequesterRsrc --keepParent build/ios/iphonesimulator/Runner.app build/ios/iphonesimulator/Runner.app.zip
     artifacts:
-      - build/ios/iphoneos/Runner.app
+      - build/ios/iphonesimulator/Runner.app
+      - build/ios/iphonesimulator/Runner.app.zip
       - /tmp/xcodebuild_logs/*.log
