@@ -28,7 +28,7 @@ workflows:
       - name: Install CocoaPods dependencies
         script: |
           if find ios -name Podfile -print -quit | grep -q .; then
-            find ios -name Podfile -execdir pod install \\;
+            find ios -name Podfile -execdir pod install \;
           else
             echo "No Podfile found under ios/. Flutter/Xcode will report if the iOS project setup is incomplete."
           fi
