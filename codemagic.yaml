@@ -57,7 +57,15 @@ workflows:
       - name: Get Flutter packages
         script: flutter pub get
       - name: Install CocoaPods dependencies
-        script: find ios -name Podfile -execdir pod install \\;
+        script: |
+          if [ -f ios/Podfile ]; then
+            cd ios
+            pod install
+            cd ..
+          else
+            echo "No ios/Podfile found; Flutter iOS project setup may be incomplete."
+            exit 1
+          fi
       - name: Build signed iOS IPA
         script: flutter build ipa --release
     artifacts:
