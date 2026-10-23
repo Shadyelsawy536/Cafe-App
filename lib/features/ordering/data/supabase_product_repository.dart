@@ -223,6 +223,10 @@ class SupabaseProductRepository implements ProductRepository {
   Future<void> prefetchProductConfigurations(
     Iterable<String> productIds,
   ) async {
+    // Warm only a small initial batch. Fetching every product's full
+    // modifier/variant tree on startup caused many serial network calls
+    // even though customers may never open most products.
+    // Remaining products load on demand when selected.
     final ids = productIds
         .where(
           (id) =>
@@ -230,6 +234,7 @@ class SupabaseProductRepository implements ProductRepository {
                   .containsKey(id),
         )
         .toSet()
+        .take(4)
         .toList();
 
     if (ids.isEmpty) {
@@ -239,32 +244,27 @@ class SupabaseProductRepository implements ProductRepository {
     if (kDebugMode) {
       debugPrint(
         'CONFIG PREFETCH START: '
-        '${ids.length} products',
+        '${ids.length} products (limited initial batch)',
       );
     }
 
-    // Prefetch is intentionally conservative.
-    //
-    // Product details requested directly by the user
-    // should have priority over background work.
-    //
-    // fetchProductConfiguration() already prevents
-    // duplicate requests, so if the user taps a product
-    // while it is being prefetched, the same Future is reused.
-    for (final productId in ids) {
-      try {
-        await fetchProductConfiguration(
-          productId,
-        );
-      } catch (error) {
-        if (kDebugMode) {
-          debugPrint(
-            'CONFIG PREFETCH FAILED: '
-            '$productId | $error',
-          );
+    // Run this small batch concurrently, without blocking catalog render.
+    // fetchProductConfiguration() deduplicates requests if a customer
+    // opens one of these products while its prefetch is still running.
+    await Future.wait(
+      ids.map((productId) async {
+        try {
+          await fetchProductConfiguration(productId);
+        } catch (error) {
+          if (kDebugMode) {
+            debugPrint(
+              'CONFIG PREFETCH FAILED: '
+              '$productId | $error',
+            );
+          }
         }
-      }
-    }
+      }),
+    );
 
     if (kDebugMode) {
       debugPrint(

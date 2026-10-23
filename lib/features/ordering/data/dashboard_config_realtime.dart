@@ -31,10 +31,20 @@ class DashboardConfigRealtime {
 
   RealtimeChannel? _channel;
   bool _started = false;
+  bool _healthy = false;
+  StreamSubscription<AuthState>? _authSub;
 
   void start() {
     if (_started) return;
     _started = true;
+
+    // If the first join used an expired JWT (persisted session), rejoin once
+    // the token has been refreshed.
+    _authSub ??= _client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.tokenRefreshed && !_healthy) {
+        unawaited(_restart());
+      }
+    });
 
     final channel = _client.channel(
       'cafe-dashboard-config-${TenantConfig.restaurantId}',
@@ -87,6 +97,7 @@ class DashboardConfigRealtime {
     );
 
     channel.subscribe((status, error) {
+      _healthy = status == RealtimeSubscribeStatus.subscribed;
       debugPrint('REALTIME CONFIG STATUS: $status');
       if (error != null) {
         debugPrint('REALTIME CONFIG ERROR: $error');
@@ -121,10 +132,28 @@ class DashboardConfigRealtime {
     }
   }
 
+  Future<void> _restart() async {
+    final channel = _channel;
+    _channel = null;
+    _started = false;
+    _healthy = false;
+    if (channel != null) {
+      try {
+        await _client.removeChannel(channel);
+      } catch (e) {
+        debugPrint('REALTIME CONFIG: restart cleanup failed: $e');
+      }
+    }
+    start();
+  }
+
   Future<void> dispose() async {
     final channel = _channel;
     _channel = null;
     _started = false;
+    _healthy = false;
+    await _authSub?.cancel();
+    _authSub = null;
     if (channel != null) {
       await _client.removeChannel(channel);
     }

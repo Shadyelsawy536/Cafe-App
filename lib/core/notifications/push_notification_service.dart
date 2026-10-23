@@ -20,6 +20,21 @@ class PushNotificationService {
 
   PushNotificationService(this._supabase);
 
+  bool get _isIos => defaultTargetPlatform == TargetPlatform.iOS;
+
+  String get _platformName => _isIos ? 'ios' : 'android';
+
+  /// On iOS the FCM token can only be fetched after the APNs token exists.
+  /// Calling getToken() too early throws `apns-token-not-set`.
+  Future<bool> _waitForApnsToken() async {
+    for (var i = 0; i < 20; i++) {
+      final apns = await _messaging.getAPNSToken();
+      if (apns != null) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    return false;
+  }
+
   Future<void> initialize() async {
     final settings =
         await _messaging.requestPermission(
@@ -31,6 +46,16 @@ class PushNotificationService {
       criticalAlert: false,
       provisional: false,
     );
+
+    if (_isIos) {
+      // iOS does not show notifications while the app is in the foreground
+      // unless this is enabled.
+      await _messaging.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    }
 
     if (kDebugMode) {
       debugPrint(
@@ -92,6 +117,14 @@ class PushNotificationService {
     String? token,
   }) async {
     try {
+      if (_isIos && !await _waitForApnsToken()) {
+        debugPrint(
+          '⚠️ APNs token not available (check Push Notifications '
+          'capability, APNs key in Firebase, and a real device).',
+        );
+        return;
+      }
+
       final fcmToken =
           token ?? await _messaging.getToken();
 
@@ -120,7 +153,7 @@ class PushNotificationService {
           'p_restaurant_id':
               TenantConfig.restaurantId,
           'p_token': fcmToken,
-          'p_platform': 'android',
+          'p_platform': _platformName,
         },
       );
 
@@ -138,11 +171,9 @@ class PushNotificationService {
         }
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint(
-          '❌ Failed to register push device: $e',
-        );
-      }
+      debugPrint(
+        '❌ Failed to register push device: $e',
+      );
     }
   }
 

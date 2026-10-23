@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -13,6 +14,7 @@ import 'features/auth/presentation/controllers/auth_controller.dart';
 import 'features/ordering/data/dashboard_config_realtime.dart';
 import 'features/ordering/data/product_repository.dart';
 import 'features/ordering/data/supabase_product_repository.dart';
+import 'features/ordering/models/branding.dart';
 import 'features/ordering/presentation/controllers/ordering_controller.dart';
 import 'features/ordering/presentation/screens/main_shell.dart';
 
@@ -51,55 +53,22 @@ Future<void> main() async {
 
   StartupMetrics.log('WidgetsFlutterBinding initialized');
 
-  // ------------------------------------------------------------
-  // Firebase + Supabase initialization
-  // ------------------------------------------------------------
-  //
-  // Both still start concurrently.
-  // We are only measuring each one separately so we can identify
-  // which initialization is responsible for startup time.
-  // ------------------------------------------------------------
-
-  final firebaseStopwatch = Stopwatch()..start();
-
-  final firebaseFuture = Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  ).then((result) {
-    firebaseStopwatch.stop();
-
-    StartupMetrics.log(
-      'Firebase.initializeApp COMPLETE '
-      '(${firebaseStopwatch.elapsedMilliseconds}ms)',
-    );
-
-    return result;
-  });
+  // Supabase is required by the ordering app, so initialize it before
+  // runApp. Firebase is only required for push notifications and must
+  // not delay the first frame; initialize it after the UI starts.
 
   final supabaseStopwatch = Stopwatch()..start();
 
-  final supabaseFuture = Supabase.initialize(
+  await Supabase.initialize(
     url: SupabaseConfig.url,
     publishableKey: SupabaseConfig.anonKey,
-  ).then((result) {
-    supabaseStopwatch.stop();
+  );
 
-    StartupMetrics.log(
-      'Supabase.initialize COMPLETE '
-      '(${supabaseStopwatch.elapsedMilliseconds}ms)',
-    );
-
-    return result;
-  });
-
-  final results = await Future.wait([
-    firebaseFuture,
-    supabaseFuture,
-  ]);
-
-  final supabase = results[1] as Supabase;
+  supabaseStopwatch.stop();
 
   StartupMetrics.log(
-    'Firebase + Supabase BOTH COMPLETE',
+    'Supabase.initialize COMPLETE '
+    '(${supabaseStopwatch.elapsedMilliseconds}ms)',
   );
 
   // ------------------------------------------------------------
@@ -140,18 +109,58 @@ Future<void> main() async {
     });
   });
 
-  // ------------------------------------------------------------
-  // Push notifications intentionally stay in background.
-  // They must NOT block startup.
-  // ------------------------------------------------------------
+  // Firebase + push setup is intentionally deferred until after runApp.
+  // A Firebase initialization/permission/network delay must not hold up
+  // the catalog's first frame.
+  WidgetsBinding.instance.endOfFrame.then((_) {
+    Future<void>.delayed(const Duration(seconds: 3), () {
+      unawaited(
+        _initializeFirebaseAndNotifications(
+          Supabase.instance.client,
+        ),
+      );
+    });
+  });
+}
 
-  unawaited(
-    PushNotificationService(supabase.client).initialize(),
-  );
+Future<void> _initializeFirebaseAndNotifications(
+  SupabaseClient supabase,
+) async {
+  final stopwatch = Stopwatch()..start();
 
-  StartupMetrics.log(
-    'Push notification initialization started in background',
-  );
+  try {
+    // White-label: every restaurant app has its own google-services.json /
+    // GoogleService-Info.plist, so prefer the native config. Fall back to the
+    // generated firebase_options.dart (original Cafe app, web).
+    if (kIsWeb) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } else {
+      try {
+        await Firebase.initializeApp();
+      } catch (_) {
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+      }
+    }
+
+    StartupMetrics.log(
+      'Firebase.initializeApp COMPLETE '
+      '(${stopwatch.elapsedMilliseconds}ms, background)',
+    );
+
+    await PushNotificationService(supabase).initialize();
+
+    StartupMetrics.log(
+      'Push notification initialization COMPLETE '
+      '(${stopwatch.elapsedMilliseconds}ms, background)',
+    );
+  } catch (error, stackTrace) {
+    debugPrint('Background Firebase/push initialization failed: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
 }
 
 void _onFrameTimings(List<ui.FrameTiming> timings) {
@@ -193,6 +202,9 @@ class _CafeAppState extends State<CafeApp> {
   late final ProductRepository _repository;
   late final OrderingController _controller;
   late final DashboardConfigRealtime _configRealtime;
+  Branding? _themeBranding;
+  late ThemeData _lightTheme;
+  late ThemeData _darkTheme;
 
   @override
   void initState() {
@@ -338,27 +350,26 @@ class _CafeAppState extends State<CafeApp> {
           },
         ),
       ],
-      child: Consumer<OrderingController>(
-        builder: (context, controller, _) {
-          StartupMetrics.log(
-            'Consumer<OrderingController>.builder',
-          );
+      child: Selector<OrderingController, (Branding, ThemeMode)>(
+        selector: (_, controller) => (controller.branding, controller.themeMode),
+        builder: (context, data, _) {
+          final (branding, themeMode) = data;
+
+          // ColorScheme.fromSeed is expensive. Rebuild themes only when the
+          // branding object actually changes, not on every cart/realtime
+          // notification.
+          if (!identical(_themeBranding, branding)) {
+            _themeBranding = branding;
+            _lightTheme = AppTheme.light(branding);
+            _darkTheme = AppTheme.dark(branding);
+          }
 
           return MaterialApp(
             title: 'Cafe',
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.light(
-              controller.branding,
-            ),
-            darkTheme: AppTheme.dark(
-              controller.branding,
-            ),
-            themeMode: controller.themeMode,
-
-            // --------------------------------------------------
-            // Welcome Splash
-            // --------------------------------------------------
-
+            theme: _lightTheme,
+            darkTheme: _darkTheme,
+            themeMode: themeMode,
             home: const WelcomeSplash(),
           );
         },
@@ -405,7 +416,7 @@ class _WelcomeSplashState extends State<WelcomeSplash>
 
     // Keep the Welcome screen short and smooth.
     Future.delayed(
-      const Duration(milliseconds: 1100),
+      const Duration(milliseconds: 600),
       () {
         if (!mounted) return;
 
@@ -417,7 +428,7 @@ class _WelcomeSplashState extends State<WelcomeSplash>
           PageRouteBuilder(
             pageBuilder: (_, __, ___) => const MainShell(),
             transitionDuration: const Duration(
-              milliseconds: 450,
+              milliseconds: 250,
             ),
             reverseTransitionDuration: Duration.zero,
             transitionsBuilder: (

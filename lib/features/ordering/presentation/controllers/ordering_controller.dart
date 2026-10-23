@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/config/tenant_config.dart';
 import '../../data/delivery_zone_repository.dart';
@@ -68,6 +70,7 @@ class OrderingController extends ChangeNotifier {
   StreamSubscription<AuthState>? _authSubscription;
 
   bool _realtimeStarted = false;
+  bool _realtimeHealthy = false;
   bool _disposed = false;
 
   bool loading = true;
@@ -168,9 +171,19 @@ class OrderingController extends ChangeNotifier {
         );
 
         if (session != null) {
-          unawaited(
-            _startRealtime(),
-          );
+          // A persisted session can be expired at launch, so the first
+          // realtime join fails with InvalidJWTToken. Once the token has been
+          // refreshed, rejoin with the fresh one.
+          if (data.event == AuthChangeEvent.tokenRefreshed &&
+              !_realtimeHealthy) {
+            unawaited(
+              _stopRealtime().then((_) => _startRealtime()),
+            );
+          } else {
+            unawaited(
+              _startRealtime(),
+            );
+          }
 
           unawaited(
             loadOrderHistory(),
@@ -395,6 +408,9 @@ class OrderingController extends ChangeNotifier {
           );
         }
 
+        _realtimeHealthy =
+            status == RealtimeSubscribeStatus.subscribed;
+
         if (status ==
             RealtimeSubscribeStatus.subscribed) {
           debugPrint(
@@ -433,6 +449,7 @@ class OrderingController extends ChangeNotifier {
 
     _realtimeChannel = null;
     _realtimeStarted = false;
+    _realtimeHealthy = false;
 
     if (channel == null) {
       return;
@@ -492,9 +509,137 @@ class OrderingController extends ChangeNotifier {
     loading = true;
     notifyListeners();
 
+    // Show the last known catalog immediately on repeat launches, then
+    // refresh it from Supabase. Cache is scoped to this restaurant so
+    // products can never leak between white-label tenants.
+    final cacheKey = 'catalog_cache:${TenantConfig.restaurantId}';
+    final catalogStopwatch = Stopwatch()..start();
+    // Start the network request before reading preferences so the cache
+    // lookup never adds serial delay to the server refresh.
+    final freshProductsFuture = _repository.fetchProducts();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedJson = prefs.getString(cacheKey);
+      if (cachedJson != null && cachedJson.isNotEmpty) {
+        final decoded = jsonDecode(cachedJson);
+        if (decoded is List) {
+          final cachedProducts = decoded
+              .whereType<Map>()
+              .map((row) => Product.fromJson(
+                    Map<String, dynamic>.from(row),
+                  ))
+              .toList();
+
+          if (cachedProducts.isNotEmpty && !_disposed) {
+            products = cachedProducts;
+            loading = false;
+            notifyListeners();
+            debugPrint(
+              'CATALOG CACHE READY: ${cachedProducts.length} products',
+            );
+          }
+        }
+      }
+    } catch (error) {
+      // A bad/old local cache must never prevent a fresh server catalog.
+      debugPrint('CATALOG CACHE READ ERROR: $error');
+    }
+
+    try {
+      // Always refresh from the server; local cache is for fast first paint,
+      // not the source of truth for prices or availability.
+      final freshProducts = await freshProductsFuture;
+      catalogStopwatch.stop();
+
+      if (_disposed) return;
+
+      products = freshProducts;
+      loading = false;
+      notifyListeners();
+
+      debugPrint(
+        'CATALOG READY: ${products.length} products '
+        'in ${catalogStopwatch.elapsedMilliseconds}ms',
+      );
+
+      // Persist only the lightweight catalog; configured product details
+      // continue to load through the existing repository cache/on-demand path.
+      unawaited(_saveCatalogCache(cacheKey, freshProducts));
+
+      // Everything below is secondary startup work and runs after the
+      // catalog has been allowed to render.
+      unawaited(_loadSecondaryStartupData());
+
+      // Delay the prefetch so it doesn't compete with product image downloads
+      // and first-screen rendering (in the logs, config requests that overlapped
+      // image loading took 12-16s instead of <1s).
+      unawaited(
+        Future<void>.delayed(const Duration(seconds: 5), () {
+          if (_disposed) return Future<void>.value();
+          return _repository
+              .prefetchProductConfigurations(
+                products.map((product) => product.id),
+              )
+              .catchError((error) {
+            debugPrint('PRODUCT CONFIG PREFETCH ERROR: $error');
+          });
+        }),
+      );
+
+      unawaited(
+        _repository.fetchLocations().then((freshLocations) {
+          if (_disposed) return;
+          locations = freshLocations;
+          notifyListeners();
+        }).catchError((error) {
+          debugPrint('Background locations load error: $error');
+        }),
+      );
+
+      unawaited(
+        _repository.fetchAvailability().then((freshAvailability) {
+          if (_disposed) return;
+          availability = freshAvailability;
+          notifyListeners();
+        }).catchError((error) {
+          debugPrint('Background availability load error: $error');
+        }),
+      );
+
+      if (_client.auth.currentSession != null) {
+        unawaited(_startRealtime());
+      }
+    } catch (error) {
+      debugPrint('loadData error: $error');
+
+      if (_disposed) return;
+
+      // If a cache was already shown, keep it visible when the network fails.
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _saveCatalogCache(
+    String cacheKey,
+    List<Product> catalog,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        cacheKey,
+        jsonEncode(catalog.map((product) => product.toJson()).toList()),
+      );
+      debugPrint('CATALOG CACHE SAVED: ${catalog.length} products');
+    } catch (error) {
+      debugPrint('CATALOG CACHE WRITE ERROR: $error');
+    }
+  }
+
+  Future<void> _loadSecondaryStartupData() async {
     try {
       final results = await Future.wait([
-        _repository.fetchProducts(),
         _repository.fetchBranding(),
         _repository.fetchSettings(),
         _repository.fetchPromotion(),
@@ -502,108 +647,15 @@ class OrderingController extends ChangeNotifier {
 
       if (_disposed) return;
 
-      products = results[0] as List<Product>;
-
-      branding = results[1] as Branding;
-
-      settings = results[2] as ExperienceSettings;
-
-      promotion = results[3] as Promotion;
-
-      loading = false;
-
+      branding = results[0] as Branding;
+      settings = results[1] as ExperienceSettings;
+      promotion = results[2] as Promotion;
       notifyListeners();
 
-      /// Product configurations are NOT part of the
-      /// critical catalog startup path.
-      ///
-      /// The catalog renders first, then configurations
-      /// are fetched in the background.
-      unawaited(
-        _repository
-            .prefetchProductConfigurations(
-          products.map(
-            (product) => product.id,
-          ),
-        )
-            .catchError(
-          (error) {
-            debugPrint(
-              'PRODUCT CONFIG PREFETCH ERROR: '
-              '$error',
-            );
-          },
-        ),
-      );
-
-      /// Locations are not required to render
-      /// the main catalog.
-      unawaited(
-        _repository
-            .fetchLocations()
-            .then(
-          (freshLocations) {
-            if (_disposed) return;
-
-            locations = freshLocations;
-
-            notifyListeners();
-          },
-        ).catchError(
-          (e) {
-            debugPrint(
-              'Background locations load error: '
-              '$e',
-            );
-          },
-        ),
-      );
-
-      /// Not required to render the main catalog either -- fetched in the
-      /// background same as locations, and re-checked whenever the
-      /// checkout screen needs a fresh answer (business hours change
-      /// minute to minute, unlike the rest of this startup data).
-      unawaited(
-        _repository
-            .fetchAvailability()
-            .then(
-          (freshAvailability) {
-            if (_disposed) return;
-
-            availability = freshAvailability;
-
-            notifyListeners();
-          },
-        ).catchError(
-          (e) {
-            debugPrint(
-              'Background availability load error: '
-              '$e',
-            );
-          },
-        ),
-      );
-
-      /// Realtime is also not part of the critical
-      /// startup path.
-      ///
-      /// Do not await it here. This allows loadData()
-      /// to finish immediately after the catalog is ready.
-      if (_client.auth.currentSession != null) {
-        unawaited(
-          _startRealtime(),
-        );
-      }
-    } catch (e) {
-      debugPrint(
-        'loadData error: $e',
-      );
-
-      if (_disposed) return;
-
-      loading = false;
-
-      notifyListeners();
+      debugPrint('SECONDARY STARTUP DATA READY');
+    } catch (error) {
+      // Keep fallback branding/settings/promotion and never block the menu.
+      debugPrint('Secondary startup data load error: $error');
     }
   }
 

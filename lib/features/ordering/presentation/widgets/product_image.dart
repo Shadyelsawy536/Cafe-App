@@ -22,10 +22,20 @@ class ProductImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    // Decode at display size instead of full resolution: far less memory and
+    // main/raster thread work on mid-range phones.
+    final cacheW = (width != null && width!.isFinite) ? (width! * dpr).round() : 600;
+    final cacheH = (height != null && height!.isFinite) ? (height! * dpr).round() : null;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: CachedNetworkImage(
         imageUrl: imageUrl,
+        memCacheWidth: cacheW > 0 ? cacheW : 600,
+        memCacheHeight: cacheH,
+        fadeInDuration: const Duration(milliseconds: 120),
+        fadeOutDuration: Duration.zero,
         width: width,
         height: height,
         fit: fit,
