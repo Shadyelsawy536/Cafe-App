@@ -831,11 +831,8 @@ class SupabaseProductRepository implements ProductRepository {
         .limit(1)
         .maybeSingle();
 
-    // The hero banner's background image is the dashboard's Restaurant
-    // Info -> Cover field, not a separate upload -- one restaurant-wide
-    // cover, not per-promotion. Title/subtitle still come from
-    // restaurant_promotions (or the fallback copy) when a promotion has
-    // been configured.
+    // The hero banner's background image comes from Restaurant Info -> Cover.
+    // Banner copy is optional: never inject default title/subtitle text.
     final restaurantRow = await _client
         .from('restaurants')
         .select('cover_image_url')
@@ -848,10 +845,8 @@ class SupabaseProductRepository implements ProductRepository {
 
     if (row == null) {
       return Promotion(
-        title:
-            'Fresh Batch Brew, Daily',
-        subtitle:
-            'Slow-brewed overnight for a smoother cup — try it iced.',
+        title: '',
+        subtitle: '',
         imageUrl: (coverUrl != null && coverUrl.isNotEmpty) ? coverUrl : fallbackImageUrl,
       );
     }
