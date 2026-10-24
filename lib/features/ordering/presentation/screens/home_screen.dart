@@ -383,19 +383,23 @@ class _PromoCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Positioned(
-                left: 20,
-                right: 20,
-                bottom: 18,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(promotion.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18)),
-                    const SizedBox(height: 4),
-                    Text(promotion.subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                    const SizedBox(height: 8),
-                    const Row(children: [Text('Discover more', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)), SizedBox(width: 4), Icon(Icons.arrow_forward, color: Colors.white, size: 16)]),
-                  ],
+              if (promotion.title.trim().isNotEmpty || promotion.subtitle.trim().isNotEmpty)
+                Positioned(
+                  left: 20,
+                  right: 20,
+                  bottom: 18,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (promotion.title.trim().isNotEmpty)
+                        Text(promotion.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18)),
+                      if (promotion.title.trim().isNotEmpty && promotion.subtitle.trim().isNotEmpty)
+                        const SizedBox(height: 4),
+                      if (promotion.subtitle.trim().isNotEmpty)
+                        Text(promotion.subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    ],
+                  ),
                 ),
               ),
             ],
