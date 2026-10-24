@@ -126,9 +126,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
         final theme = Theme.of(context);
         final name = controller.lastCustomerInfo?.name;
-        final welcomeTitle = controller.settings.homeWelcomeTitle ?? 'Welcome ☕';
+        final welcomeTitle = controller.settings.homeWelcomeTitle ?? '';
         final welcomeSubtitle =
-            controller.settings.homeWelcomeSubtitle ?? 'What are you craving today?';
+            controller.settings.homeWelcomeSubtitle ?? '';
         final isSearching = _query.trim().isNotEmpty;
         final results = isSearching
             ? _searchProducts(controller.products, _query)
@@ -163,12 +163,15 @@ class _HomeScreenState extends State<HomeScreen> {
             child: ListView(
               padding: const EdgeInsets.all(24),
               children: [
-                Text(
-                  name == null || name.isEmpty ? welcomeTitle : '$welcomeTitle, $name',
-                  style: theme.textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(welcomeSubtitle, style: theme.textTheme.bodyMedium),
+                if (welcomeTitle.trim().isNotEmpty)
+                  Text(
+                    name == null || name.isEmpty ? welcomeTitle : '$welcomeTitle, $name',
+                    style: theme.textTheme.headlineMedium,
+                  ),
+                if (welcomeSubtitle.trim().isNotEmpty) ...[
+                  if (welcomeTitle.trim().isNotEmpty) const SizedBox(height: 4),
+                  Text(welcomeSubtitle, style: theme.textTheme.bodyMedium),
+                ],
                 if (!controller.availability.isOpen) ...[
                   const SizedBox(height: 12),
                   Container(
@@ -374,15 +377,16 @@ class _PromoCard extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               ProductImage(imageUrl: promotion.imageUrl),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Colors.black.withValues(alpha: 0.65)],
+              if (promotion.title.trim().isNotEmpty || promotion.subtitle.trim().isNotEmpty)
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Colors.black.withValues(alpha: 0.65)],
+                    ),
                   ),
                 ),
-              ),
               if (promotion.title.trim().isNotEmpty || promotion.subtitle.trim().isNotEmpty)
                 Positioned(
                   left: 20,
@@ -401,7 +405,6 @@ class _PromoCard extends StatelessWidget {
                     ],
                   ),
                 ),
-              ),
             ],
           ),
         ),
