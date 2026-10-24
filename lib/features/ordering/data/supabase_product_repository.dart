@@ -729,7 +729,7 @@ class SupabaseProductRepository implements ProductRepository {
           .maybeSingle(),
       _client
           .from('restaurants')
-          .select('name')
+          .select('name, logo_url, cover_image_url')
           .eq('id', TenantConfig.restaurantId)
           .maybeSingle(),
     ]);
@@ -741,8 +741,8 @@ class SupabaseProductRepository implements ProductRepository {
       return restaurantName == null || restaurantName.isEmpty
           ? Branding.fallback
           : Branding(
-              logoUrl: Branding.fallback.logoUrl,
-              coverUrl: Branding.fallback.coverUrl,
+              logoUrl: restaurantRow?['logo_url'] as String? ?? Branding.fallback.logoUrl,
+              coverUrl: restaurantRow?['cover_image_url'] as String? ?? Branding.fallback.coverUrl,
               primaryColor: Branding.fallback.primaryColor,
               secondaryColor: Branding.fallback.secondaryColor,
               backgroundColor: Branding.fallback.backgroundColor,
@@ -761,9 +761,13 @@ class SupabaseProductRepository implements ProductRepository {
           row['customer_background_color'] ??
               row['background_color'],
       'logo':
-          row['customer_logo_url'],
+          (row['customer_logo_url'] as String?)?.trim().isNotEmpty == true
+              ? row['customer_logo_url']
+              : restaurantRow?['logo_url'],
       'cover':
-          row['customer_cover_url'],
+          (row['customer_cover_url'] as String?)?.trim().isNotEmpty == true
+              ? row['customer_cover_url']
+              : restaurantRow?['cover_image_url'],
       'fontFamily':
           row['font_family'],
       'restaurantName': restaurantName,
