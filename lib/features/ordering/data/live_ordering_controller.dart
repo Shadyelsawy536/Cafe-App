@@ -1,4 +1,6 @@
 import 'dashboard_config_realtime.dart';
+import '../models/promotion.dart';
+import '../models/restaurant_availability.dart';
 import 'product_repository.dart';
 import '../presentation/controllers/ordering_controller.dart';
 
@@ -24,6 +26,14 @@ class LiveOrderingController extends OrderingController {
       },
       onLocations: (value) {
         locations = value;
+        notifyListeners();
+      },
+      onPromotion: (value) {
+        promotion = value;
+        notifyListeners();
+      },
+      onAvailability: (value) {
+        availability = value;
         notifyListeners();
       },
     );
