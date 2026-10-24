@@ -134,7 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
             : const <Product>[];
 
         return Scaffold(
-          appBar: AppBar(title: Text(controller.branding.restaurantName)),
+          appBar: AppBar(title: Row(mainAxisSize: MainAxisSize.min, children: [if (controller.branding.logoUrl.isNotEmpty) ...[ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(controller.branding.logoUrl, width: 30, height: 30, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const SizedBox.shrink())), const SizedBox(width: 10)], Flexible(child: Text(controller.branding.restaurantName, overflow: TextOverflow.ellipsis))])),
           body: SafeArea(
             child: ListView(
               padding: const EdgeInsets.all(24),
@@ -145,6 +145,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(welcomeSubtitle, style: theme.textTheme.bodyMedium),
+                if (!controller.availability.isOpen) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.errorContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      controller.availability.message ?? 'We are currently closed. Please check our opening hours.',
+                      style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 TextField(
                   controller: _searchController,

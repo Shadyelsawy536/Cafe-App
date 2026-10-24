@@ -272,6 +272,18 @@ class _CafeAppState extends State<CafeApp> {
         _controller.locations = locations;
         _controller.refreshUi();
       },
+      onPromotion: (promotion) {
+        if (!mounted) return;
+
+        _controller.promotion = promotion;
+        _controller.refreshUi();
+      },
+      onAvailability: (availability) {
+        if (!mounted) return;
+
+        _controller.availability = availability;
+        _controller.refreshUi();
+      },
     )..start();
 
     realtimeStopwatch.stop();

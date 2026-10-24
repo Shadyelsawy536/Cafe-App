@@ -1108,6 +1108,13 @@ class OrderingController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final freshAvailability = await _repository.fetchAvailability();
+      availability = freshAvailability;
+      notifyListeners();
+      if (!freshAvailability.isOpen) {
+        throw Exception(freshAvailability.message ?? 'The restaurant is currently closed. Please try again during opening hours.');
+      }
+
       final userId =
           _client.auth.currentUser?.id;
 
