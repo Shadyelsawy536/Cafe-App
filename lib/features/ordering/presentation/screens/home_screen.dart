@@ -134,7 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
             : const <Product>[];
 
         return Scaffold(
-          appBar: AppBar(title: Text(controller.branding.restaurantName)),
+          appBar: AppBar(title: Row(mainAxisSize: MainAxisSize.min, children: [if (controller.branding.logoUrl.isNotEmpty) ...[ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(controller.branding.logoUrl, width: 30, height: 30, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const SizedBox.shrink())), const SizedBox(width: 10)], Flexible(child: Text(controller.branding.restaurantName, overflow: TextOverflow.ellipsis))])),
           body: SafeArea(
             child: ListView(
               padding: const EdgeInsets.all(24),
