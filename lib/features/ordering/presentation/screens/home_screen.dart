@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -134,7 +135,30 @@ class _HomeScreenState extends State<HomeScreen> {
             : const <Product>[];
 
         return Scaffold(
-          appBar: AppBar(title: Row(mainAxisSize: MainAxisSize.min, children: [if (controller.branding.logoUrl.isNotEmpty) ...[ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(controller.branding.logoUrl, width: 30, height: 30, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const SizedBox.shrink())), const SizedBox(width: 10)], Flexible(child: Text(controller.branding.restaurantName, overflow: TextOverflow.ellipsis))])),
+          appBar: AppBar(
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (controller.branding.logoUrl.trim().isNotEmpty) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: SizedBox(
+                      width: 30,
+                      height: 30,
+                      child: _RestaurantLogo(url: controller.branding.logoUrl),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Flexible(
+                  child: Text(
+                    controller.branding.restaurantName,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
           body: SafeArea(
             child: ListView(
               padding: const EdgeInsets.all(24),
@@ -226,6 +250,36 @@ class _HomeScreenState extends State<HomeScreen> {
             p.description.toLowerCase().contains(normalized) ||
             p.category.toLowerCase().contains(normalized))
         .toList();
+  }
+}
+
+
+class _RestaurantLogo extends StatelessWidget {
+  const _RestaurantLogo({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    final uri = Uri.tryParse(url.trim());
+    final isSvg = uri != null &&
+        (uri.path.toLowerCase().endsWith('.svg') ||
+            uri.queryParameters['format']?.toLowerCase() == 'svg');
+
+    if (isSvg) {
+      return SvgPicture.network(
+        url,
+        fit: BoxFit.contain,
+        placeholderBuilder: (_) => const SizedBox.shrink(),
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      );
+    }
+
+    return Image.network(
+      url,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+    );
   }
 }
 
