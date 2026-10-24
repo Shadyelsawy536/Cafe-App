@@ -7,6 +7,7 @@ import '../../../core/config/tenant_config.dart';
 import '../models/branding.dart';
 import '../models/cafe_location.dart';
 import '../models/experience_settings.dart';
+import '../models/promotion.dart';
 import 'product_repository.dart';
 
 /// Keeps customer-facing dashboard configuration synchronized with Supabase.
@@ -18,15 +19,18 @@ class DashboardConfigRealtime {
     required ValueChanged<ExperienceSettings> onSettings,
     required ValueChanged<Branding> onBranding,
     required ValueChanged<List<CafeLocation>> onLocations,
+    required ValueChanged<Promotion?> onPromotion,
   })  : _repository = repository,
         _onSettings = onSettings,
         _onBranding = onBranding,
-        _onLocations = onLocations;
+        _onLocations = onLocations,
+        _onPromotion = onPromotion;
 
   final ProductRepository _repository;
   final ValueChanged<ExperienceSettings> _onSettings;
   final ValueChanged<Branding> _onBranding;
   final ValueChanged<List<CafeLocation>> _onLocations;
+  final ValueChanged<Promotion?> _onPromotion;
   final SupabaseClient _client = Supabase.instance.client;
 
   RealtimeChannel? _channel;
@@ -96,6 +100,37 @@ class DashboardConfigRealtime {
       },
     );
 
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'restaurant_promotions',
+      filter: const PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'restaurant_id',
+        value: TenantConfig.restaurantId,
+      ),
+      callback: (payload) {
+        debugPrint('REALTIME CONFIG: promotions ${payload.eventType}');
+        unawaited(_reloadPromotion());
+      },
+    );
+
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'restaurants',
+      filter: const PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'id',
+        value: TenantConfig.restaurantId,
+      ),
+      callback: (payload) {
+        debugPrint('REALTIME CONFIG: restaurant identity ${payload.eventType}');
+        unawaited(_reloadBranding());
+        unawaited(_reloadPromotion());
+      },
+    );
+
     channel.subscribe((status, error) {
       _healthy = status == RealtimeSubscribeStatus.subscribed;
       debugPrint('REALTIME CONFIG STATUS: $status');
@@ -121,6 +156,14 @@ class DashboardConfigRealtime {
       _onBranding(await _repository.fetchBranding());
     } catch (e) {
       debugPrint('REALTIME CONFIG: branding refresh failed: $e');
+    }
+  }
+
+  Future<void> _reloadPromotion() async {
+    try {
+      _onPromotion(await _repository.fetchPromotion());
+    } catch (e) {
+      debugPrint('REALTIME CONFIG: promotion refresh failed: $e');
     }
   }
 
