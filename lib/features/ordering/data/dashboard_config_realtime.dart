@@ -8,6 +8,7 @@ import '../models/branding.dart';
 import '../models/cafe_location.dart';
 import '../models/experience_settings.dart';
 import '../models/promotion.dart';
+import '../models/restaurant_availability.dart';
 import 'product_repository.dart';
 
 /// Keeps customer-facing dashboard configuration synchronized with Supabase.
@@ -20,17 +21,20 @@ class DashboardConfigRealtime {
     required ValueChanged<Branding> onBranding,
     required ValueChanged<List<CafeLocation>> onLocations,
     required ValueChanged<Promotion?> onPromotion,
+    required ValueChanged<RestaurantAvailability> onAvailability,
   })  : _repository = repository,
         _onSettings = onSettings,
         _onBranding = onBranding,
         _onLocations = onLocations,
-        _onPromotion = onPromotion;
+        _onPromotion = onPromotion,
+        _onAvailability = onAvailability;
 
   final ProductRepository _repository;
   final ValueChanged<ExperienceSettings> _onSettings;
   final ValueChanged<Branding> _onBranding;
   final ValueChanged<List<CafeLocation>> _onLocations;
   final ValueChanged<Promotion?> _onPromotion;
+  final ValueChanged<RestaurantAvailability> _onAvailability;
   final SupabaseClient _client = Supabase.instance.client;
 
   RealtimeChannel? _channel;
@@ -67,6 +71,7 @@ class DashboardConfigRealtime {
       callback: (payload) {
         debugPrint('REALTIME CONFIG: settings ${payload.eventType}');
         unawaited(_reloadSettings());
+        unawaited(_reloadAvailability());
       },
     );
 
@@ -97,6 +102,21 @@ class DashboardConfigRealtime {
       callback: (payload) {
         debugPrint('REALTIME CONFIG: locations ${payload.eventType}');
         unawaited(_reloadLocations());
+      },
+    );
+
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'restaurant_business_hours',
+      filter: const PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'restaurant_id',
+        value: TenantConfig.restaurantId,
+      ),
+      callback: (payload) {
+        debugPrint('REALTIME CONFIG: business hours ${payload.eventType}');
+        unawaited(_reloadAvailability());
       },
     );
 
@@ -156,6 +176,14 @@ class DashboardConfigRealtime {
       _onBranding(await _repository.fetchBranding());
     } catch (e) {
       debugPrint('REALTIME CONFIG: branding refresh failed: $e');
+    }
+  }
+
+  Future<void> _reloadAvailability() async {
+    try {
+      _onAvailability(await _repository.fetchAvailability());
+    } catch (e) {
+      debugPrint('REALTIME CONFIG: availability refresh failed: $e');
     }
   }
 
