@@ -401,7 +401,6 @@ class _PromoCard extends StatelessWidget {
                     ],
                   ),
                 ),
-              ),
             ],
           ),
         ),
