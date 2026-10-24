@@ -41,6 +41,7 @@ class DashboardConfigRealtime {
   bool _started = false;
   bool _healthy = false;
   StreamSubscription<AuthState>? _authSub;
+  Timer? _configRefreshTimer;
 
   void start() {
     if (_started) return;
@@ -151,6 +152,16 @@ class DashboardConfigRealtime {
       },
     );
 
+    // Realtime is the fast path, but a missing table publication or a
+    // transient socket disconnect must not leave customer-facing copy stale.
+    // Refresh only lightweight identity/banner config periodically as a fallback.
+    _configRefreshTimer?.cancel();
+    _configRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!_started) return;
+      unawaited(_reloadBranding());
+      unawaited(_reloadPromotion());
+    });
+
     channel.subscribe((status, error) {
       _healthy = status == RealtimeSubscribeStatus.subscribed;
       debugPrint('REALTIME CONFIG STATUS: $status');
@@ -208,6 +219,8 @@ class DashboardConfigRealtime {
     _channel = null;
     _started = false;
     _healthy = false;
+    _configRefreshTimer?.cancel();
+    _configRefreshTimer = null;
     if (channel != null) {
       try {
         await _client.removeChannel(channel);
@@ -223,6 +236,8 @@ class DashboardConfigRealtime {
     _channel = null;
     _started = false;
     _healthy = false;
+    _configRefreshTimer?.cancel();
+    _configRefreshTimer = null;
     await _authSub?.cancel();
     _authSub = null;
     if (channel != null) {
