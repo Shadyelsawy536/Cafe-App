@@ -145,6 +145,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(welcomeSubtitle, style: theme.textTheme.bodyMedium),
+                if (!controller.availability.isOpen) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.errorContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      controller.availability.message ?? 'We are currently closed. Please check our opening hours.',
+                      style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 TextField(
                   controller: _searchController,
