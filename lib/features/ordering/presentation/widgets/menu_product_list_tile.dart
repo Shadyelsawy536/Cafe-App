@@ -81,15 +81,18 @@ class MenuProductListTile extends StatelessWidget {
                 Positioned(
                   right: -6,
                   bottom: -6,
-                  child: if (product.available)
-                QuickQuantityControl(
-                    quantity: quantity,
-                    onIncrement: onIncrement,
-                    onDecrement: onDecrement,
-                    compact: true,
-                  ),
-              else
-                Text('Unavailable at this branch')
+                  child: product.available
+                      ? QuickQuantityControl(
+                          quantity: quantity,
+                          onIncrement: onIncrement,
+                          onDecrement: onDecrement,
+                          compact: true,
+                        )
+                      : const Icon(
+                          Icons.block,
+                          size: 24,
+                          color: Colors.grey,
+                        ),
                 ),
               ],
             ),
