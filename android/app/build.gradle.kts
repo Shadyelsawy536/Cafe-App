@@ -37,10 +37,12 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = dartDefines["ANDROID_APPLICATION_ID"] ?: "com.example.cafe_app"
-        manifestPlaceholders["appName"] = dartDefines["APP_NAME"] ?: "Cafe App"
-        manifestPlaceholders["oauthRedirectScheme"] =
-            dartDefines["OAUTH_REDIRECT_SCHEME"] ?: "com.shadyelsawy.cafeapp"
+        applicationId = dartDefines["ANDROID_APPLICATION_ID"]
+            ?: error("Missing ANDROID_APPLICATION_ID. Build through tool/hubdine_build.dart with the restaurant config.")
+        manifestPlaceholders["appName"] = dartDefines["APP_NAME"]
+            ?: error("Missing APP_NAME. Build through tool/hubdine_build.dart with the restaurant config.")
+        manifestPlaceholders["oauthRedirectScheme"] = dartDefines["OAUTH_REDIRECT_SCHEME"]
+            ?: error("Missing OAUTH_REDIRECT_SCHEME. Set it in config/restaurants/<slug>/restaurant.json.")
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
