@@ -19,6 +19,22 @@ class SupabaseProductRepository implements ProductRepository {
   final SupabaseClient _client =
       Supabase.instance.client;
 
+  String? _selectedBranchId;
+  final Map<String, Map<String, dynamic>> _branchOverridesByProductId = {};
+
+  @override
+  void setBranchId(String? branchId) {
+    if (_selectedBranchId == branchId) return;
+    _selectedBranchId = branchId;
+    _branchOverridesByProductId.clear();
+    final keys = <String>{..._productConfigurationCache.keys, ..._configurationRequests.keys};
+    _productConfigurationCache.clear();
+    _configurationRequests.clear();
+    for (final key in keys) {
+      _configurationRequestGenerations[key] = (_configurationRequestGenerations[key] ?? 0) + 1;
+    }
+  }
+
   /// Complete product configuration cache.
   ///
   /// Presence in this map means that the configuration
@@ -47,7 +63,19 @@ class SupabaseProductRepository implements ProductRepository {
 
   @override
   Future<List<Product>> fetchProducts() async {
-    final rows = await _client
+    // Resolve the default (primary) branch in parallel with the product query.
+    final branchFuture = _selectedBranchId == null
+        ? _client
+            .from('restaurant_locations')
+            .select('id')
+            .eq('restaurant_id', TenantConfig.restaurantId)
+            .eq('is_active', true)
+            .order('is_primary', ascending: false)
+            .order('sort_order')
+            .limit(1)
+            .maybeSingle()
+        : Future<Map<String, dynamic>?>.value(null);
+    final productsFuture = _client
         .from('products')
         .select('''
           id,
@@ -59,37 +87,41 @@ class SupabaseProductRepository implements ProductRepository {
           sort_order,
           categories(name)
         ''')
-        .eq(
-          'restaurant_id',
-          TenantConfig.restaurantId,
-        )
+        .eq('restaurant_id', TenantConfig.restaurantId)
         .order('sort_order');
+    final defaultBranch = await branchFuture;
+    _selectedBranchId ??= defaultBranch?['id'] as String?;
+    final rows = await productsFuture;
+
+    _branchOverridesByProductId.clear();
+    if (_selectedBranchId != null) {
+      final overrides = await _client
+          .from('product_branch_overrides')
+          .select('product_id, price_override, is_available')
+          .eq('restaurant_id', TenantConfig.restaurantId)
+          .eq('branch_id', _selectedBranchId!);
+      for (final row in (overrides as List<dynamic>)) {
+        final data = Map<String, dynamic>.from(row as Map);
+        _branchOverridesByProductId[data['product_id'] as String] = data;
+      }
+    }
 
     final products =
         (rows as List<dynamic>)
             .map<Product>((row) {
-      final data =
-          row as Map<String, dynamic>;
+      final data = row as Map<String, dynamic>;
+      final override = _branchOverridesByProductId[data['id'] as String];
+      final globalStatus = data['status'] as String;
+      final branchAvailability = override?['is_available'] as bool?;
 
       return Product(
         id: data['id'] as String,
         name: data['name'] as String,
-        description:
-            data['description'] as String? ??
-                '',
-        basePrice:
-            (data['base_price'] as num)
-                .toDouble(),
-        imageUrl:
-            data['image_url'] as String? ??
-                '',
-        category:
-            (data['categories']
-                    as Map<String, dynamic>?)?['name']
-                as String? ??
-                'General',
-        available:
-            data['status'] == 'available',
+        description: data['description'] as String? ?? '',
+        basePrice: ((override?['price_override'] as num?) ?? (data['base_price'] as num)).toDouble(),
+        imageUrl: data['image_url'] as String? ?? '',
+        category: (data['categories'] as Map<String, dynamic>?)?['name'] as String? ?? 'General',
+        available: globalStatus != 'hidden' && (branchAvailability ?? globalStatus == 'available'),
       );
     }).toList();
 
@@ -512,6 +544,10 @@ class SupabaseProductRepository implements ProductRepository {
       );
     }
 
+    final override = _branchOverridesByProductId[row['id'] as String];
+    final globalStatus = row['status'] as String;
+    final branchAvailability = override?['is_available'] as bool?;
+
     return Product(
       id: row['id'] as String,
       name: row['name'] as String,
@@ -519,8 +555,7 @@ class SupabaseProductRepository implements ProductRepository {
           row['description'] as String? ??
               '',
       basePrice:
-          (row['base_price'] as num)
-              .toDouble(),
+          ((override?['price_override'] as num?) ?? (row['base_price'] as num)).toDouble(),
       imageUrl:
           row['image_url'] as String? ??
               '',
@@ -530,7 +565,7 @@ class SupabaseProductRepository implements ProductRepository {
               as String? ??
               'General',
       available:
-          row['status'] == 'available',
+          globalStatus != 'hidden' && (branchAvailability ?? globalStatus == 'available'),
       sizes: sizes,
       modifierGroups:
           modifierGroups,
@@ -920,6 +955,8 @@ class SupabaseProductRepository implements ProductRepository {
             longitude:
                 (row['longitude'] as num?)
                     ?.toDouble(),
+            id: row['id'] as String,
+            isPrimary: row['is_primary'] as bool? ?? false,
           ),
         )
         .toList();
