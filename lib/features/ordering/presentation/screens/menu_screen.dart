@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/animations/route_transitions.dart';
+import '../../../../core/config/tenant_config.dart';
 import '../../models/experience_settings.dart';
 import '../../models/product.dart';
 import '../controllers/ordering_controller.dart';
