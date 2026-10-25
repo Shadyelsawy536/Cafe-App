@@ -126,6 +126,11 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  static const _oauthRedirectScheme = String.fromEnvironment(
+    'OAUTH_REDIRECT_SCHEME',
+    defaultValue: 'com.shadyelsawy.cafeapp',
+  );
+
   Future<void> signInWithGoogle() async {
     status = AuthStatus.submitting;
     errorMessage = null;
@@ -134,7 +139,7 @@ class AuthController extends ChangeNotifier {
     try {
       await _client.auth.signInWithOAuth(
         supabase.OAuthProvider.google,
-        redirectTo: 'com.shadyelsawy.cafeapp://login-callback/',
+        redirectTo: '$_oauthRedirectScheme://login-callback/',
       );
     } on supabase.AuthException catch (e) {
       errorMessage = e.message;
