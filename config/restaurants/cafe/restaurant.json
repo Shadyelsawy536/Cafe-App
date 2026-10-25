@@ -4,5 +4,6 @@
   "APP_NAME": "Cafe App",
   "ANDROID_APPLICATION_ID": "com.example.cafe_app",
   "IOS_BUNDLE_ID": "com.example.cafeApp",
+  "OAUTH_REDIRECT_SCHEME": "com.shadyelsawy.cafeapp",
   "PAYMENT_REDIRECT_BASE_URL": "https://shadyelsawy536.github.io/cafe-website/?restaurant=cafe"
 }
