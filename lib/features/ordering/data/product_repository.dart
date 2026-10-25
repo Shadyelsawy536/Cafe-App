@@ -14,6 +14,9 @@ abstract class ProductRepository {
   /// This does NOT load product variants or modifier configuration.
   Future<List<Product>> fetchProducts();
 
+  /// Selects the branch whose price and availability overrides are applied.
+  void setBranchId(String? branchId);
+
   /// Returns the cached complete configuration for a product.
   ///
   /// Returns null when the product configuration has not been cached yet.
@@ -69,6 +72,9 @@ abstract class ProductRepository {
 }
 
 class MockProductRepository implements ProductRepository {
+  @override
+  void setBranchId(String? branchId) {}
+
   @override
   Future<Branding> fetchBranding() async {
     await Future.delayed(
