@@ -262,6 +262,30 @@ class OrderingController extends ChangeNotifier {
     channel.onPostgresChanges(
       event: PostgresChangeEvent.all,
       schema: 'public',
+      table: 'product_branch_overrides',
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'restaurant_id',
+        value: TenantConfig.restaurantId,
+      ),
+      callback: (payload) {
+        if (_disposed) return;
+        final changedBranchId = _recordValue(payload, 'branch_id');
+        if (changedBranchId != null &&
+            selectedBranchId != null &&
+            changedBranchId != selectedBranchId) {
+          return;
+        }
+        final selected = selectedBranchId;
+        _repository.setBranchId(null);
+        if (selected != null) _repository.setBranchId(selected);
+        unawaited(_reloadProducts());
+      },
+    );
+
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
       table: 'products',
       callback: (payload) {
         if (_disposed) return;
