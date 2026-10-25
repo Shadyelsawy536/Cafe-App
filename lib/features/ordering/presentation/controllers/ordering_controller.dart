@@ -58,6 +58,22 @@ class OrderingController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setSelectedBranch(String branchId) {
+    if (branchId.isEmpty || selectedBranchId == branchId) return;
+    selectedBranchId = branchId;
+    _repository.setBranchId(branchId);
+    // A cart created for one branch may have different prices or unavailable items.
+    // Clear it rather than silently charging a different amount after branch switch.
+    cart.clear();
+    selectedModifiers.clear();
+    selectedSize = null;
+    _configuredProductId = null;
+    loadingProductConfiguration = false;
+    productConfigurationError = null;
+    notifyListeners();
+    unawaited(_reloadProducts());
+  }
+
   final ProductRepository _repository;
 
   final DeliveryZoneRepository _deliveryZoneRepository =
@@ -87,6 +103,7 @@ class OrderingController extends ChangeNotifier {
   Promotion? promotion;
 
   List<CafeLocation> locations = [];
+  String? selectedBranchId;
 
   /// Tracks the product currently being configured.
   ///
@@ -475,6 +492,9 @@ class OrderingController extends ChangeNotifier {
       if (_disposed) return;
 
       products = freshProducts;
+      if (selectedBranchId != null) {
+        unawaited(_saveCatalogCache('catalog_cache:${TenantConfig.restaurantId}:${selectedBranchId}', freshProducts));
+      }
 
       notifyListeners();
 
@@ -512,7 +532,7 @@ class OrderingController extends ChangeNotifier {
     // Show the last known catalog immediately on repeat launches, then
     // refresh it from Supabase. Cache is scoped to this restaurant so
     // products can never leak between white-label tenants.
-    final cacheKey = 'catalog_cache:${TenantConfig.restaurantId}';
+    final cacheKey = 'catalog_cache:${TenantConfig.restaurantId}:primary:v2';
     final catalogStopwatch = Stopwatch()..start();
     // Start the network request before reading preferences so the cache
     // lookup never adds serial delay to the server refresh.
@@ -591,6 +611,12 @@ class OrderingController extends ChangeNotifier {
         _repository.fetchLocations().then((freshLocations) {
           if (_disposed) return;
           locations = freshLocations;
+          final primary = freshLocations.where((location) => location.isPrimary).firstOrNull
+              ?? (freshLocations.isNotEmpty ? freshLocations.first : null);
+          if (selectedBranchId == null && primary != null && primary.id.isNotEmpty) {
+            selectedBranchId = primary.id;
+            _repository.setBranchId(primary.id);
+          }
           notifyListeners();
         }).catchError((error) {
           debugPrint('Background locations load error: $error');
@@ -1160,7 +1186,7 @@ class OrderingController extends ChangeNotifier {
 
       final orderId =
           await _client.rpc(
-        'place_order_with_location',
+        'place_order_with_branch',
         params: {
           'p_restaurant_id':
               TenantConfig.restaurantId,
@@ -1181,6 +1207,7 @@ class OrderingController extends ChangeNotifier {
                       PaymentMethod.cash
                   ? 'cash'
                   : 'visa',
+          'p_branch_id': selectedBranchId,
           'p_customer_notes':
               customerInfo.notes,
           'p_scheduled_for':
