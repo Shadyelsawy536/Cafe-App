@@ -76,7 +76,9 @@ Future<void> main(List<String> args) async {
   final oauthScheme = (cfg['OAUTH_REDIRECT_SCHEME'] as String?) ??
       (slug == 'cafe' ? 'com.shadyelsawy.cafeapp' : androidId);
 
-  if (!RegExp(r'^[A-Za-z][A-Za-z0-9+.-]*
+  if (!RegExp(r'^[A-Za-z][A-Za-z0-9+.-]*$').hasMatch(oauthScheme)) {
+    _fail('OAUTH_REDIRECT_SCHEME looks invalid: $oauthScheme');
+  }
 
   if (!RegExp(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
@@ -298,6 +300,7 @@ Future<void> main(List<String> args) async {
   final code = await _run('flutter', [
     ...flutterArgs,
     '--dart-define-from-file=${cfgFile.path}',
+    '--dart-define=OAUTH_REDIRECT_SCHEME=$oauthScheme',
     ...extra,
   ]);
   if (code != 0) exit(code);
