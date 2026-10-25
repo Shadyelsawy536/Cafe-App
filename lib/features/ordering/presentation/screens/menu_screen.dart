@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/animations/route_transitions.dart';
+import '../../../../core/config/tenant_config.dart';
 import '../../models/experience_settings.dart';
 import '../../models/product.dart';
 import '../controllers/ordering_controller.dart';
@@ -29,6 +32,8 @@ class _MenuScreenState extends State<MenuScreen> {
   String? _activeCategory;
   BrowseLayout _layout = BrowseLayout.grid;
   bool _layoutInitialized = false;
+  bool _branchPromptHandled = false;
+  bool _branchPickerVisible = false;
 
   static const double _chipRowHeight = 52;
 
@@ -43,6 +48,270 @@ class _MenuScreenState extends State<MenuScreen> {
     _scrollController.removeListener(_syncActiveCategoryWithScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _showBranchPicker(
+    BuildContext context,
+    OrderingController controller, {
+    bool firstVisit = false,
+  }) async {
+    if (_branchPickerVisible || controller.locations.length < 2) return;
+    _branchPickerVisible = true;
+    String? nearestBranchId;
+    final mapped = controller.locations
+        .where((branch) => branch.latitude != null && branch.longitude != null)
+        .toList();
+    if (mapped.isNotEmpty) {
+      try {
+        var permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied && firstVisit) {
+          permission = await Geolocator.requestPermission();
+        }
+        if (permission != LocationPermission.denied &&
+            permission != LocationPermission.deniedForever &&
+            await Geolocator.isLocationServiceEnabled()) {
+          final position = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.low,
+              timeLimit: Duration(seconds: 6),
+            ),
+          );
+          double distance(CafeLocation branch) => Geolocator.distanceBetween(
+                position.latitude,
+                position.longitude,
+                branch.latitude!,
+                branch.longitude!,
+              );
+          mapped.sort((a, b) => distance(a).compareTo(distance(b)));
+          nearestBranchId = mapped.first.id;
+        }
+      } catch (_) {
+        // Location is optional; the manual branch list always remains available.
+      }
+    }
+
+    if (!context.mounted) {
+      _branchPickerVisible = false;
+      return;
+    }
+    final colors = Theme.of(context).colorScheme;
+    String? selectedId = nearestBranchId ?? controller.selectedBranchId;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          return Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * .82,
+            ),
+            decoration: BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colors.outlineVariant,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(22, 22, 22, 16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: colors.primaryContainer,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Icon(Icons.storefront_rounded, color: colors.onPrimaryContainer),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              firstVisit ? 'Choose your branch' : 'Change branch',
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              'Prices and availability depend on the branch you choose.',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (nearestBranchId != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(13),
+                      decoration: BoxDecoration(
+                        color: colors.primaryContainer.withValues(alpha: .55),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.near_me_rounded, color: colors.primary),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Nearest to you', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: colors.primary, fontWeight: FontWeight.w800)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  controller.locations.firstWhere((branch) => branch.id == nearestBranchId).name,
+                                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.auto_awesome_rounded, size: 19),
+                        ],
+                      ),
+                    ),
+                  ),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                    itemCount: controller.locations.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 9),
+                    itemBuilder: (context, index) {
+                      final branch = controller.locations[index];
+                      final isSelected = selectedId == branch.id;
+                      final isNearest = nearestBranchId == branch.id;
+                      return Material(
+                        color: isSelected ? colors.primaryContainer.withValues(alpha: .48) : colors.surface,
+                        borderRadius: BorderRadius.circular(17),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(17),
+                          onTap: () => setSheetState(() => selectedId = branch.id),
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(17),
+                              border: Border.all(
+                                color: isSelected ? colors.primary : colors.outlineVariant.withValues(alpha: .6),
+                                width: isSelected ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration: BoxDecoration(color: colors.surfaceContainerHighest, borderRadius: BorderRadius.circular(13)),
+                                  child: Icon(Icons.location_on_outlined, color: isSelected ? colors.primary : colors.onSurfaceVariant),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Flexible(child: Text(branch.name, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis)),
+                                          if (isNearest) ...[
+                                            const SizedBox(width: 6),
+                                            Icon(Icons.near_me_rounded, size: 14, color: colors.primary),
+                                          ],
+                                        ],
+                                      ),
+                                      if (branch.address.trim().isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Text(branch.address, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant)),
+                                      ],
+                                      if (branch.isPrimary && !isNearest) ...[
+                                        const SizedBox(height: 4),
+                                        Text('Main branch', style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant)),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(isSelected ? Icons.check_circle_rounded : Icons.circle_outlined, color: isSelected ? colors.primary : colors.outlineVariant),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.viewInsetsOf(context).bottom),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: selectedId == null
+                          ? null
+                          : () async {
+                              final branchId = selectedId!;
+                              final hadCart = controller.cart.isNotEmpty && controller.selectedBranchId != branchId;
+                              controller.setSelectedBranch(branchId);
+                              final prefs = await SharedPreferences.getInstance();
+                              await prefs.setString('hubdine:selected-branch:${TenantConfig.restaurantId}', branchId);
+                              if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+                              if (hadCart && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Cart cleared because branch prices and availability can differ.')),
+                                );
+                              }
+                            },
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                      ),
+                      child: const Text('Continue with this branch', style: TextStyle(fontWeight: FontWeight.w800)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    _branchPickerVisible = false;
+  }
+
+  void _promptForBranchIfNeeded(OrderingController controller) {
+    if (_branchPromptHandled ||
+        controller.locations.length < 2 ||
+        controller.locations.any((branch) => branch.id.isEmpty)) {
+      return;
+    }
+    _branchPromptHandled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'hubdine:selected-branch:${TenantConfig.restaurantId}';
+      final saved = prefs.getString(key);
+      if (saved != null && controller.locations.any((branch) => branch.id == saved)) {
+        if (controller.selectedBranchId != saved) controller.setSelectedBranch(saved);
+        return;
+      }
+      if (!mounted) return;
+      await _showBranchPicker(context, controller, firstVisit: true);
+    });
   }
 
   void _syncActiveCategoryWithScroll() {
@@ -106,6 +375,7 @@ class _MenuScreenState extends State<MenuScreen> {
           _layoutInitialized = true;
         }
 
+        _promptForBranchIfNeeded(controller);
         final categories = controller.categories;
         final activeCategory = _activeCategory ?? categories.first;
         final selectedBranch = controller.locations.isEmpty
@@ -120,45 +390,22 @@ class _MenuScreenState extends State<MenuScreen> {
             title: const Text('Menu'),
             actions: [
               if (controller.locations.length > 1 && controller.locations.every((location) => location.id.isNotEmpty))
-                PopupMenuButton<String>(
-                  tooltip: 'Choose branch',
-                  onSelected: (branchId) {
-                    final hadCart = controller.cart.isNotEmpty;
-                    controller.setSelectedBranch(branchId);
-                    if (hadCart) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Cart cleared because prices and availability can differ by branch.')),
-                      );
-                    }
-                  },
-                  itemBuilder: (context) => controller.locations
-                      .map((location) => PopupMenuItem<String>(
-                            value: location.id,
-                            child: Row(
-                              children: [
-                                Expanded(child: Text(location.name)),
-                                if (location.id == controller.selectedBranchId)
-                                  const Icon(Icons.check, size: 18),
-                              ],
-                            ),
-                          ))
-                      .toList(),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.store_outlined),
-                        const SizedBox(width: 4),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 110),
-                          child: Text(
-                            selectedBranch?.name ?? 'Branch',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const Icon(Icons.arrow_drop_down),
-                      ],
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showBranchPicker(context, controller),
+                    icon: const Icon(Icons.storefront_outlined, size: 18),
+                    label: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 96),
+                      child: Text(
+                        selectedBranch?.name ?? 'Choose branch',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
                     ),
                   ),
                 ),
