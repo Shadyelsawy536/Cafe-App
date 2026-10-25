@@ -1255,6 +1255,18 @@ class OrderingController extends ChangeNotifier {
         },
       ) as String;
 
+      try {
+        await _client.rpc(
+          'set_customer_order_source',
+          params: {
+            'p_order_id': orderId,
+            'p_order_source': 'app',
+          },
+        );
+      } catch (error) {
+        debugPrint('Order created, but source tagging did not complete: $error');
+      }
+
       final order = await _fetchOrderById(
         orderId,
       );
