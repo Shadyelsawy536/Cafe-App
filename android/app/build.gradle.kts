@@ -39,6 +39,8 @@ android {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = dartDefines["ANDROID_APPLICATION_ID"] ?: "com.example.cafe_app"
         manifestPlaceholders["appName"] = dartDefines["APP_NAME"] ?: "Cafe App"
+        manifestPlaceholders["oauthRedirectScheme"] =
+            dartDefines["OAUTH_REDIRECT_SCHEME"] ?: "com.shadyelsawy.cafeapp"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
