@@ -1,0 +1,194 @@
+// HubDine white-label build tool.
+//
+//   dart run tool/hubdine_build.dart <slug> [apk|appbundle|ios|run] [extra flutter args]
+//
+// Reads config/restaurants/<slug>/restaurant.json and:
+//   1. validates it (and that the Firebase files match the app ids),
+//   2. copies google-services.json / GoogleService-Info.plist into place,
+//   3. writes ios/Flutter/Restaurant.xcconfig (bundle id + display name),
+//   4. generates launcher icons from <slug>/icon.png (if present),
+//   5. runs `flutter <target> --dart-define-from-file=<restaurant.json>`.
+import 'dart:convert';
+import 'dart:io';
+
+const _required = [
+  'RESTAURANT_ID',
+  'APP_NAME',
+  'ANDROID_APPLICATION_ID',
+  'IOS_BUNDLE_ID',
+  'OAUTH_REDIRECT_SCHEME',
+];
+
+Never _fail(String message) {
+  stderr.writeln('ERROR: $message');
+  exit(1);
+}
+
+Future<int> _run(String exe, List<String> args) async {
+  stdout.writeln('> $exe ${args.join(' ')}');
+  final process = await Process.start(
+    exe,
+    args,
+    runInShell: true,
+    mode: ProcessStartMode.inheritStdio,
+  );
+  return process.exitCode;
+}
+
+Future<void> main(List<String> args) async {
+  if (args.isEmpty) {
+    stderr.writeln(
+      'Usage: dart run tool/hubdine_build.dart <slug> '
+      '[apk|appbundle|ios|run] [extra flutter args]',
+    );
+    exit(64);
+  }
+
+  final slug = args[0];
+  final target = args.length > 1 ? args[1] : 'apk';
+  final extra = args.length > 2 ? args.sublist(2) : <String>[];
+  const targets = {'apk', 'appbundle', 'ios', 'run'};
+  if (!targets.contains(target)) {
+    _fail('Unknown target "$target". Use: ${targets.join(', ')}');
+  }
+
+  final dir = Directory('config/restaurants/$slug');
+  final cfgFile = File('${dir.path}/restaurant.json');
+  if (!cfgFile.existsSync()) _fail('Missing ${cfgFile.path}');
+
+  final Map<String, dynamic> cfg;
+  try {
+    cfg = jsonDecode(cfgFile.readAsStringSync()) as Map<String, dynamic>;
+  } catch (e) {
+    _fail('${cfgFile.path} is not valid JSON: $e');
+  }
+
+  for (final key in _required) {
+    final value = cfg[key];
+    if (value is! String || value.trim().isEmpty) {
+      _fail('"$key" is missing or empty in ${cfgFile.path}');
+    }
+  }
+
+  final restaurantId = cfg['RESTAURANT_ID'] as String;
+  final appName = cfg['APP_NAME'] as String;
+  final androidId = cfg['ANDROID_APPLICATION_ID'] as String;
+  final iosId = cfg['IOS_BUNDLE_ID'] as String;
+  final oauthScheme = cfg['OAUTH_REDIRECT_SCHEME'] as String;
+
+  if (!RegExp(r'^[A-Za-z][A-Za-z0-9+.-]*' + r'$').hasMatch(oauthScheme)) {
+    _fail('OAUTH_REDIRECT_SCHEME looks invalid: $oauthScheme');
+  }
+
+  if (!RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  ).hasMatch(restaurantId)) {
+    _fail('RESTAURANT_ID is not a UUID: $restaurantId');
+  }
+  if (!RegExp(r'^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$')
+      .hasMatch(androidId)) {
+    _fail('ANDROID_APPLICATION_ID looks invalid: $androidId');
+  }
+  if (!RegExp(r'^[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+$').hasMatch(iosId)) {
+    _fail('IOS_BUNDLE_ID looks invalid: $iosId');
+  }
+
+  // --- Firebase files (must match the ids, otherwise push will not work) ---
+  final needsAndroid = target != 'ios';
+  final needsIos = target == 'ios' || target == 'run';
+
+  final gs = File('${dir.path}/google-services.json');
+  if (gs.existsSync()) {
+    final json = jsonDecode(gs.readAsStringSync()) as Map<String, dynamic>;
+    final packages = <String>[
+      for (final c in (json['client'] as List? ?? const []))
+        ((c as Map)['client_info']?['android_client_info']?['package_name'])
+            .toString(),
+    ];
+    if (!packages.contains(androidId)) {
+      _fail(
+        'google-services.json has packages $packages but '
+        'ANDROID_APPLICATION_ID is $androidId. Register this app in '
+        'Firebase and download its google-services.json.',
+      );
+    }
+    gs.copySync('android/app/google-services.json');
+    stdout.writeln('Copied google-services.json');
+  } else if (needsAndroid) {
+    _fail('Missing ${gs.path} (required for Android builds).');
+  }
+
+  final plist = File('${dir.path}/GoogleService-Info.plist');
+  if (plist.existsSync()) {
+    final match = RegExp(
+      r'<key>BUNDLE_ID</key>\s*<string>([^<]+)</string>',
+    ).firstMatch(plist.readAsStringSync());
+    if (match == null || match.group(1) != iosId) {
+      _fail(
+        'GoogleService-Info.plist BUNDLE_ID is ${match?.group(1)} but '
+        'IOS_BUNDLE_ID is $iosId.',
+      );
+    }
+    plist.copySync('ios/Runner/GoogleService-Info.plist');
+    stdout.writeln('Copied GoogleService-Info.plist');
+  } else if (needsIos) {
+    stdout.writeln(
+      'WARNING: no GoogleService-Info.plist for $slug. iOS will fall back '
+      'to firebase_options.dart (the original Cafe Firebase app).',
+    );
+  }
+
+  // --- iOS bundle id + display name ---
+  File('ios/Flutter/Restaurant.xcconfig').writeAsStringSync(
+    '// Generated by tool/hubdine_build.dart for "$slug".\n'
+    'APP_BUNDLE_ID=$iosId\n'
+    'APP_DISPLAY_NAME=$appName\n',
+  );
+
+  // --- Switching restaurants: clean stale native outputs ---
+  final genDir = Directory('config/.generated')..createSync(recursive: true);
+  final lastFile = File('${genDir.path}/last_slug');
+  final last = lastFile.existsSync() ? lastFile.readAsStringSync().trim() : '';
+  if (last != slug) {
+    stdout.writeln('Restaurant changed ("$last" -> "$slug"): flutter clean');
+    if (await _run('flutter', ['clean']) != 0) _fail('flutter clean failed');
+    if (await _run('flutter', ['pub', 'get']) != 0) {
+      _fail('flutter pub get failed');
+    }
+  }
+
+  // --- Launcher icons ---
+  final icon = File('${dir.path}/icon.png');
+  if (icon.existsSync()) {
+    final iconCfg = File('${genDir.path}/flutter_launcher_icons.yaml');
+    iconCfg.writeAsStringSync(
+      'flutter_launcher_icons:\n'
+      '  android: true\n'
+      '  ios: true\n'
+      '  remove_alpha_ios: true\n'
+      '  image_path: "${icon.path}"\n',
+    );
+    final code = await _run(
+      'dart',
+      ['run', 'flutter_launcher_icons', '-f', iconCfg.path],
+    );
+    if (code != 0) _fail('flutter_launcher_icons failed');
+  } else {
+    stdout.writeln('No icon.png for $slug: keeping the current launcher icon.');
+  }
+
+  // --- Build ---
+  final flutterArgs = target == 'run'
+      ? ['run']
+      : ['build', target];
+  final code = await _run('flutter', [
+    ...flutterArgs,
+    '--dart-define-from-file=${cfgFile.path}',
+    '--dart-define=OAUTH_REDIRECT_SCHEME=$oauthScheme',
+    ...extra,
+  ]);
+  if (code != 0) exit(code);
+
+  lastFile.writeAsStringSync(slug);
+  stdout.writeln('Done: $slug ($target).');
+}

@@ -1,0 +1,247 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../core/config/tenant_config.dart';
+import '../models/branding.dart';
+import '../models/cafe_location.dart';
+import '../models/experience_settings.dart';
+import '../models/promotion.dart';
+import '../models/restaurant_availability.dart';
+import 'product_repository.dart';
+
+/// Keeps customer-facing dashboard configuration synchronized with Supabase.
+/// Realtime events are treated as invalidation signals; the repository then
+/// re-fetches the canonical state through the normal RLS-protected path.
+class DashboardConfigRealtime {
+  DashboardConfigRealtime({
+    required ProductRepository repository,
+    required ValueChanged<ExperienceSettings> onSettings,
+    required ValueChanged<Branding> onBranding,
+    required ValueChanged<List<CafeLocation>> onLocations,
+    required ValueChanged<Promotion?> onPromotion,
+    required ValueChanged<RestaurantAvailability> onAvailability,
+  })  : _repository = repository,
+        _onSettings = onSettings,
+        _onBranding = onBranding,
+        _onLocations = onLocations,
+        _onPromotion = onPromotion,
+        _onAvailability = onAvailability;
+
+  final ProductRepository _repository;
+  final ValueChanged<ExperienceSettings> _onSettings;
+  final ValueChanged<Branding> _onBranding;
+  final ValueChanged<List<CafeLocation>> _onLocations;
+  final ValueChanged<Promotion?> _onPromotion;
+  final ValueChanged<RestaurantAvailability> _onAvailability;
+  final SupabaseClient _client = Supabase.instance.client;
+
+  RealtimeChannel? _channel;
+  bool _started = false;
+  bool _healthy = false;
+  StreamSubscription<AuthState>? _authSub;
+  Timer? _configRefreshTimer;
+
+  void start() {
+    if (_started) return;
+    _started = true;
+
+    // If the first join used an expired JWT (persisted session), rejoin once
+    // the token has been refreshed.
+    _authSub ??= _client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.tokenRefreshed && !_healthy) {
+        unawaited(_restart());
+      }
+    });
+
+    final channel = _client.channel(
+      'cafe-dashboard-config-${TenantConfig.restaurantId}',
+    );
+    _channel = channel;
+
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'restaurant_settings',
+      filter: const PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'restaurant_id',
+        value: TenantConfig.restaurantId,
+      ),
+      callback: (payload) {
+        debugPrint('REALTIME CONFIG: settings ${payload.eventType}');
+        unawaited(_reloadSettings());
+        unawaited(_reloadAvailability());
+      },
+    );
+
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'restaurant_branding',
+      filter: const PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'restaurant_id',
+        value: TenantConfig.restaurantId,
+      ),
+      callback: (payload) {
+        debugPrint('REALTIME CONFIG: branding ${payload.eventType}');
+        unawaited(_reloadBranding());
+      },
+    );
+
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'restaurant_locations',
+      filter: const PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'restaurant_id',
+        value: TenantConfig.restaurantId,
+      ),
+      callback: (payload) {
+        debugPrint('REALTIME CONFIG: locations ${payload.eventType}');
+        unawaited(_reloadLocations());
+      },
+    );
+
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'restaurant_business_hours',
+      filter: const PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'restaurant_id',
+        value: TenantConfig.restaurantId,
+      ),
+      callback: (payload) {
+        debugPrint('REALTIME CONFIG: business hours ${payload.eventType}');
+        unawaited(_reloadAvailability());
+      },
+    );
+
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'restaurant_promotions',
+      filter: const PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'restaurant_id',
+        value: TenantConfig.restaurantId,
+      ),
+      callback: (payload) {
+        debugPrint('REALTIME CONFIG: promotions ${payload.eventType}');
+        unawaited(_reloadPromotion());
+      },
+    );
+
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'restaurants',
+      filter: const PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'id',
+        value: TenantConfig.restaurantId,
+      ),
+      callback: (payload) {
+        debugPrint('REALTIME CONFIG: restaurant identity ${payload.eventType}');
+        unawaited(_reloadBranding());
+        unawaited(_reloadPromotion());
+      },
+    );
+
+    // Realtime is the fast path, but a missing table publication or a
+    // transient socket disconnect must not leave customer-facing copy stale.
+    // Refresh only lightweight identity/banner config periodically as a fallback.
+    _configRefreshTimer?.cancel();
+    _configRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!_started) return;
+      unawaited(_reloadBranding());
+      unawaited(_reloadPromotion());
+    });
+
+    channel.subscribe((status, error) {
+      _healthy = status == RealtimeSubscribeStatus.subscribed;
+      debugPrint('REALTIME CONFIG STATUS: $status');
+      if (error != null) {
+        debugPrint('REALTIME CONFIG ERROR: $error');
+      }
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        debugPrint('REALTIME CONFIG: CONNECTED');
+      }
+    });
+  }
+
+  Future<void> _reloadSettings() async {
+    try {
+      _onSettings(await _repository.fetchSettings());
+    } catch (e) {
+      debugPrint('REALTIME CONFIG: settings refresh failed: $e');
+    }
+  }
+
+  Future<void> _reloadBranding() async {
+    try {
+      _onBranding(await _repository.fetchBranding());
+    } catch (e) {
+      debugPrint('REALTIME CONFIG: branding refresh failed: $e');
+    }
+  }
+
+  Future<void> _reloadAvailability() async {
+    try {
+      _onAvailability(await _repository.fetchAvailability());
+    } catch (e) {
+      debugPrint('REALTIME CONFIG: availability refresh failed: $e');
+    }
+  }
+
+  Future<void> _reloadPromotion() async {
+    try {
+      _onPromotion(await _repository.fetchPromotion());
+    } catch (e) {
+      debugPrint('REALTIME CONFIG: promotion refresh failed: $e');
+    }
+  }
+
+  Future<void> _reloadLocations() async {
+    try {
+      _onLocations(await _repository.fetchLocations());
+    } catch (e) {
+      debugPrint('REALTIME CONFIG: locations refresh failed: $e');
+    }
+  }
+
+  Future<void> _restart() async {
+    final channel = _channel;
+    _channel = null;
+    _started = false;
+    _healthy = false;
+    _configRefreshTimer?.cancel();
+    _configRefreshTimer = null;
+    if (channel != null) {
+      try {
+        await _client.removeChannel(channel);
+      } catch (e) {
+        debugPrint('REALTIME CONFIG: restart cleanup failed: $e');
+      }
+    }
+    start();
+  }
+
+  Future<void> dispose() async {
+    final channel = _channel;
+    _channel = null;
+    _started = false;
+    _healthy = false;
+    _configRefreshTimer?.cancel();
+    _configRefreshTimer = null;
+    await _authSub?.cancel();
+    _authSub = null;
+    if (channel != null) {
+      await _client.removeChannel(channel);
+    }
+  }
+}

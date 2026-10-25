@@ -1,0 +1,9 @@
+﻿{
+  "SLUG": "slice-house",
+  "RESTAURANT_ID": "5c9d6184-727b-456c-8839-7244b14ba001",
+  "APP_NAME": "Slice House",
+  "ANDROID_APPLICATION_ID": "com.hubdine.slice_house",
+  "IOS_BUNDLE_ID": "com.hubdine.slicehouse",
+  "OAUTH_REDIRECT_SCHEME": "com.hubdine.slice_house",
+  "PAYMENT_REDIRECT_BASE_URL": "https://shadyelsawy536.github.io/cafe-website/?restaurant=slice-house"
+}
