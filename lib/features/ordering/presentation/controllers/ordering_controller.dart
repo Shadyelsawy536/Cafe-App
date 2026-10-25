@@ -508,6 +508,8 @@ class OrderingController extends ChangeNotifier {
 
   Future<void> _reloadProducts() async {
     if (_disposed) return;
+    loading = true;
+    notifyListeners();
 
     try {
       final freshProducts =
@@ -516,6 +518,7 @@ class OrderingController extends ChangeNotifier {
       if (_disposed) return;
 
       products = freshProducts;
+      loading = false;
       if (selectedBranchId != null) {
         unawaited(_saveCatalogCache('catalog_cache:${TenantConfig.restaurantId}:${selectedBranchId}', freshProducts));
       }
@@ -542,6 +545,8 @@ class OrderingController extends ChangeNotifier {
         ),
       );
     } catch (e) {
+      loading = false;
+      notifyListeners();
       debugPrint(
         'REALTIME: products refresh failed: '
         '$e',
