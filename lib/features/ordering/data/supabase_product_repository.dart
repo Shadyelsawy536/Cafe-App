@@ -64,7 +64,7 @@ class SupabaseProductRepository implements ProductRepository {
   @override
   Future<List<Product>> fetchProducts() async {
     // Resolve the default (primary) branch in parallel with the product query.
-    final branchFuture = _selectedBranchId == null
+    final Future<Map<String, dynamic>?> branchFuture = _selectedBranchId == null
         ? _client
             .from('restaurant_locations')
             .select('id')
