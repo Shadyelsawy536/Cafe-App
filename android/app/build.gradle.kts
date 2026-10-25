@@ -43,7 +43,7 @@ if (!restaurantSlug.isNullOrBlank() && !configuredAndroidId.isNullOrBlank()) {
         )
     }
 
-    val packageNames = Regex("\\"package_name\\"\\s*:\\s*\\"([^\\"]+)\\"")
+    val packageNames = Regex("\"package_name\"\\s*:\\s*\"([^\"]+)\"")
         .findAll(sourceGoogleServices.readText())
         .map { it.groupValues[1] }
         .toSet()
