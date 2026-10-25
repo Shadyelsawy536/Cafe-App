@@ -436,7 +436,7 @@ class _CheckoutDetailsScreenState
                     else
                       _BranchPicker(
                         locations: controller.selectedBranchId == null
-                            ? controller.locations
+                            ? controller.locations.take(1).toList()
                             : controller.locations
                                 .where((location) => location.id == controller.selectedBranchId)
                                 .toList(),
