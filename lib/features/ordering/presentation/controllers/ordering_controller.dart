@@ -611,8 +611,14 @@ class OrderingController extends ChangeNotifier {
         _repository.fetchLocations().then((freshLocations) {
           if (_disposed) return;
           locations = freshLocations;
-          final primary = freshLocations.where((location) => location.isPrimary).firstOrNull
-              ?? (freshLocations.isNotEmpty ? freshLocations.first : null);
+          CafeLocation? primary;
+          for (final location in freshLocations) {
+            if (location.isPrimary) {
+              primary = location;
+              break;
+            }
+          }
+          primary ??= freshLocations.isNotEmpty ? freshLocations.first : null;
           if (selectedBranchId == null && primary != null && primary.id.isNotEmpty) {
             selectedBranchId = primary.id;
             _repository.setBranchId(primary.id);
