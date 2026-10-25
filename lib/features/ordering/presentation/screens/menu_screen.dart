@@ -119,7 +119,7 @@ class _MenuScreenState extends State<MenuScreen> {
           appBar: AppBar(
             title: const Text('Menu'),
             actions: [
-              if (controller.locations.length > 1)
+              if (controller.locations.length > 1 && controller.locations.every((location) => location.id.isNotEmpty))
                 PopupMenuButton<String>(
                   tooltip: 'Choose branch',
                   onSelected: (branchId) {
