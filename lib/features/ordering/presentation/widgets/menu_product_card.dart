@@ -31,7 +31,7 @@ class MenuProductCard extends StatelessWidget {
     );
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: product.available ? onTap : null,
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
@@ -85,11 +85,20 @@ class MenuProductCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      QuickQuantityControl(
-                        quantity: quantity,
-                        onIncrement: onIncrement,
-                        onDecrement: onDecrement,
-                      ),
+                      if (product.available)
+                        QuickQuantityControl(
+                          quantity: quantity,
+                          onIncrement: onIncrement,
+                          onDecrement: onDecrement,
+                        )
+                      else
+                        Text(
+                          'Unavailable at this branch',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.error,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                     ],
                   ),
                 ),
