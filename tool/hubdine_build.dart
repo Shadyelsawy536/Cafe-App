@@ -16,6 +16,7 @@ const _required = [
   'APP_NAME',
   'ANDROID_APPLICATION_ID',
   'IOS_BUNDLE_ID',
+  'OAUTH_REDIRECT_SCHEME',
 ];
 
 Never _fail(String message) {
@@ -73,8 +74,7 @@ Future<void> main(List<String> args) async {
   final appName = cfg['APP_NAME'] as String;
   final androidId = cfg['ANDROID_APPLICATION_ID'] as String;
   final iosId = cfg['IOS_BUNDLE_ID'] as String;
-  final oauthScheme = (cfg['OAUTH_REDIRECT_SCHEME'] as String?) ??
-      (slug == 'cafe' ? 'com.shadyelsawy.cafeapp' : androidId);
+  final oauthScheme = cfg['OAUTH_REDIRECT_SCHEME'] as String;
 
   if (!RegExp(r'^[A-Za-z][A-Za-z0-9+.-]*' + r'$').hasMatch(oauthScheme)) {
     _fail('OAUTH_REDIRECT_SCHEME looks invalid: $oauthScheme');
