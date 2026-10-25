@@ -102,14 +102,14 @@ class _CheckoutDetailsScreenState
         previous?.deliveryType ??
             DeliveryType.delivery;
 
-    _pickupBranch =
-        previous?.pickupBranch ??
-            (controller.locations.isNotEmpty
-                ? controller
-                    .locations
-                    .first
-                    .name
-                : null);
+    _pickupBranch = controller.locations.isNotEmpty
+        ? controller.locations
+            .firstWhere(
+              (location) => location.id == controller.selectedBranchId,
+              orElse: () => controller.locations.first,
+            )
+            .name
+        : previous?.pickupBranch;
 
     _scheduledFor =
         previous?.scheduledFor;
@@ -435,9 +435,11 @@ class _CheckoutDetailsScreenState
                     ]
                     else
                       _BranchPicker(
-                        locations:
-                            controller
-                                .locations,
+                        locations: controller.selectedBranchId == null
+                            ? controller.locations.take(1).toList()
+                            : controller.locations
+                                .where((location) => location.id == controller.selectedBranchId)
+                                .toList(),
                         selected:
                             _pickupBranch,
                         onSelected:

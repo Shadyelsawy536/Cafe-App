@@ -32,7 +32,7 @@ class MenuProductListTile extends StatelessWidget {
     );
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: product.available ? onTap : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 18),
         child: Row(
@@ -81,12 +81,18 @@ class MenuProductListTile extends StatelessWidget {
                 Positioned(
                   right: -6,
                   bottom: -6,
-                  child: QuickQuantityControl(
-                    quantity: quantity,
-                    onIncrement: onIncrement,
-                    onDecrement: onDecrement,
-                    compact: true,
-                  ),
+                  child: product.available
+                      ? QuickQuantityControl(
+                          quantity: quantity,
+                          onIncrement: onIncrement,
+                          onDecrement: onDecrement,
+                          compact: true,
+                        )
+                      : const Icon(
+                          Icons.block,
+                          size: 24,
+                          color: Colors.grey,
+                        ),
                 ),
               ],
             ),

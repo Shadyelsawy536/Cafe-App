@@ -108,11 +108,60 @@ class _MenuScreenState extends State<MenuScreen> {
 
         final categories = controller.categories;
         final activeCategory = _activeCategory ?? categories.first;
+        final selectedBranch = controller.locations.isEmpty
+            ? null
+            : controller.locations.firstWhere(
+                (location) => location.id == controller.selectedBranchId,
+                orElse: () => controller.locations.first,
+              );
 
         return Scaffold(
           appBar: AppBar(
             title: const Text('Menu'),
             actions: [
+              if (controller.locations.length > 1 && controller.locations.every((location) => location.id.isNotEmpty))
+                PopupMenuButton<String>(
+                  tooltip: 'Choose branch',
+                  onSelected: (branchId) {
+                    final hadCart = controller.cart.isNotEmpty;
+                    controller.setSelectedBranch(branchId);
+                    if (hadCart) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Cart cleared because prices and availability can differ by branch.')),
+                      );
+                    }
+                  },
+                  itemBuilder: (context) => controller.locations
+                      .map((location) => PopupMenuItem<String>(
+                            value: location.id,
+                            child: Row(
+                              children: [
+                                Expanded(child: Text(location.name)),
+                                if (location.id == controller.selectedBranchId)
+                                  const Icon(Icons.check, size: 18),
+                              ],
+                            ),
+                          ))
+                      .toList(),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.store_outlined),
+                        const SizedBox(width: 4),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 110),
+                          child: Text(
+                            selectedBranch?.name ?? 'Branch',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const Icon(Icons.arrow_drop_down),
+                      ],
+                    ),
+                  ),
+                ),
               LayoutToggle(
                 layout: _layout,
                 onChanged: (layout) => setState(() => _layout = layout),
