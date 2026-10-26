@@ -1,73 +1,54 @@
+# HubDine store builds: change RESTAURANT_SLUG to the folder name under
+# config/restaurants/ (for example: cafe or slice-house) when building another tenant.
+# Configure the matching Android keystore and Apple provisioning profiles in Codemagic.
 workflows:
-  android-release:
-    name: Cafe App - Android Release
-    max_build_duration: 60
-    instance_type: mac_mini_m2
-    environment:
-      flutter: stable
-      xcode: latest
-    scripts:
-      - name: Get Flutter packages
-        script: flutter pub get
-      - name: Build Android APK
-        script: flutter build apk --release
-    artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
-
-  ios-simulator:
-    name: Cafe App - iOS Simulator (Sauce Labs)
-    max_build_duration: 60
+  store-release:
+    name: HubDine - Tenant Store Release
+    max_build_duration: 120
     instance_type: mac_mini_m2
     environment:
       flutter: stable
       xcode: latest
       cocoapods: default
+      android_signing:
+        - hubdine-upload-key
+      vars:
+        RESTAURANT_SLUG: slice-house
     scripts:
-      - name: Get Flutter packages
-        script: flutter pub get
-      - name: Install CocoaPods dependencies
+      - name: Validate selected restaurant
         script: |
-          if find ios -name Podfile -print -quit | grep -q .; then
-            find ios -name Podfile -execdir pod install \;
-          else
-            echo "No Podfile found under ios/. Flutter/Xcode will report if the iOS project setup is incomplete."
-          fi
-      - name: Build iOS Simulator app without code signing
-        script: flutter build ios --simulator --debug
-      - name: Package Simulator app for upload
-        script: |
-          test -d build/ios/iphonesimulator/Runner.app
-          ditto -c -k --sequesterRsrc --keepParent build/ios/iphonesimulator/Runner.app build/ios/iphonesimulator/Runner.app.zip
-    artifacts:
-      - build/ios/iphonesimulator/Runner.app
-      - build/ios/iphonesimulator/Runner.app.zip
-      - /tmp/xcodebuild_logs/*.log
-
-  ios-ipa:
-    name: Cafe App - iOS IPA (Sauce Labs)
-    max_build_duration: 60
-    instance_type: mac_mini_m2
-    environment:
-      flutter: stable
-      xcode: latest
-      cocoapods: default
-    scripts:
-      - name: Set up iOS code signing
-        script: xcode-project use-profiles
-      - name: Get Flutter packages
-        script: flutter pub get
-      - name: Install CocoaPods dependencies
-        script: |
-          if [ -f ios/Podfile ]; then
-            cd ios
-            pod install
-            cd ..
-          else
-            echo "No ios/Podfile found; Flutter iOS project setup may be incomplete."
+          test -f "config/restaurants/$RESTAURANT_SLUG/restaurant.json" || {
+            echo "Unknown RESTAURANT_SLUG: $RESTAURANT_SLUG"
+            echo "Expected a folder under config/restaurants/"
             exit 1
-          fi
+          }
+          echo "Building tenant: $RESTAURANT_SLUG"
+      - name: Install Flutter packages
+        script: flutter pub get
+      - name: Build Android App Bundle (AAB)
+        script: dart run tool/hubdine_build.dart "$RESTAURANT_SLUG" appbundle --release
+      - name: Build Android APK
+        script: dart run tool/hubdine_build.dart "$RESTAURANT_SLUG" apk --release
+      - name: Prepare selected iOS app identity
+        script: |
+          python3 - <<'PY'
+          import json, os
+          slug = os.environ["RESTAURANT_SLUG"]
+          path = f"config/restaurants/{slug}/restaurant.json"
+          with open(path, encoding="utf-8") as f:
+              cfg = json.load(f)
+          with open("ios/Flutter/Restaurant.xcconfig", "w", encoding="utf-8") as f:
+              f.write(f'// Generated for {slug} by Codemagic\n')
+              f.write(f'APP_BUNDLE_ID={cfg["IOS_BUNDLE_ID"]}\n')
+              f.write(f'APP_DISPLAY_NAME={cfg["APP_NAME"]}\n')
+          print(f'Prepared iOS bundle ID: {cfg["IOS_BUNDLE_ID"]}')
+          PY
+      - name: Configure iOS signing profiles
+        script: xcode-project use-profiles
       - name: Build signed iOS IPA
-        script: flutter build ipa --release
+        script: dart run tool/hubdine_build.dart "$RESTAURANT_SLUG" ipa --release
     artifacts:
+      - build/app/outputs/bundle/release/app-release.aab
+      - build/app/outputs/flutter-apk/app-release.apk
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
