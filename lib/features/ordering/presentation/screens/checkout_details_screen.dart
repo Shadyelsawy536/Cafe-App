@@ -48,6 +48,8 @@ class _CheckoutDetailsScreenState
   late final TextEditingController
       _notesController;
 
+  late final TextEditingController _couponController;
+
   PaymentMethod _paymentMethod =
       PaymentMethod.cash;
 
@@ -94,6 +96,8 @@ class _CheckoutDetailsScreenState
       text: previous?.notes ?? '',
     );
 
+    _couponController = TextEditingController();
+
     _paymentMethod =
         previous?.paymentMethod ??
             PaymentMethod.cash;
@@ -128,6 +132,7 @@ class _CheckoutDetailsScreenState
     _phoneController.dispose();
     _addressController.dispose();
     _notesController.dispose();
+    _couponController.dispose();
 
     super.dispose();
   }
@@ -335,6 +340,24 @@ class _CheckoutDetailsScreenState
                                     .isEmpty)
                             ? 'Enter your phone number'
                             : null,
+                  ),
+                  const SizedBox(height: 24),
+                  Text('Coupon code (optional)', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _couponController,
+                    textCapitalization: TextCapitalization.characters,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      hintText: 'Enter coupon code',
+                      prefixIcon: Icon(Icons.local_offer_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'The coupon is checked securely when you place the order.',
+                    style: theme.textTheme.bodySmall,
                   ),
                   if (deliveryEnabled ||
                       pickupEnabled) ...[
@@ -854,6 +877,8 @@ class _CheckoutDetailsScreenState
       );
       return;
     }
+
+    controller.setCouponCode(_couponController.text);
 
     final info = CustomerInfo(
       name:
