@@ -36,9 +36,9 @@ workflows:
           with open(path, encoding="utf-8") as f:
               cfg = json.load(f)
           with open("ios/Flutter/Restaurant.xcconfig", "w", encoding="utf-8") as f:
-              f.write(f'// Generated for {slug} by Codemagic\\n')
-              f.write(f'APP_BUNDLE_ID={cfg["IOS_BUNDLE_ID"]}\\n')
-              f.write(f'APP_DISPLAY_NAME={cfg["APP_NAME"]}\\n')
+              f.write(f'// Generated for {slug} by Codemagic\n')
+              f.write(f'APP_BUNDLE_ID={cfg["IOS_BUNDLE_ID"]}\n')
+              f.write(f'APP_DISPLAY_NAME={cfg["APP_NAME"]}\n')
           print(f'Prepared iOS bundle ID: {cfg["IOS_BUNDLE_ID"]}')
           PY
       - name: Configure iOS signing profiles
