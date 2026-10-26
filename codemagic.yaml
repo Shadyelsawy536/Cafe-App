@@ -10,6 +10,8 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+      android_signing:
+        - hubdine-upload-key
       vars:
         RESTAURANT_SLUG: slice-house
     scripts:
