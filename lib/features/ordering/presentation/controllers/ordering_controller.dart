@@ -19,6 +19,7 @@ import '../../models/experience_settings.dart';
 import '../../models/modifier.dart';
 import '../../models/modifier_group.dart';
 import '../../models/order.dart';
+import '../../models/offer.dart';
 import '../../models/order_status.dart';
 import '../../models/order_status_event.dart';
 import '../../models/payment_method.dart';
@@ -101,6 +102,34 @@ class OrderingController extends ChangeNotifier {
   RestaurantAvailability availability = RestaurantAvailability.fallbackOpen;
 
   Promotion? promotion;
+
+  List<Offer> offers = const [];
+  String couponCode = '';
+
+  void setCouponCode(String value) {
+    couponCode = value.trim().toUpperCase();
+    notifyListeners();
+  }
+
+  Future<void> refreshOffers() async {
+    try {
+      final now = DateTime.now().toUtc().toIso8601String();
+      final rows = await _client
+          .from('offers')
+          .select('id, name, discount_type, discount_value, applies_to, starts_at, ends_at')
+          .eq('restaurant_id', TenantConfig.restaurantId)
+          .eq('is_active', true)
+          .order('starts_at', ascending: true);
+      if (_disposed) return;
+      offers = (rows as List<dynamic>)
+          .map((row) => Offer.fromJson(Map<String, dynamic>.from(row as Map)))
+          .where((offer) => offer.isCurrentAt(DateTime.parse(now)))
+          .toList();
+      notifyListeners();
+    } catch (error) {
+      debugPrint('OFFERS: load failed: $error');
+    }
+  }
 
   List<CafeLocation> locations = [];
   String? selectedBranchId;
@@ -667,6 +696,8 @@ class OrderingController extends ChangeNotifier {
           debugPrint('Background availability load error: $error');
         }),
       );
+
+      unawaited(refreshOffers());
 
       if (_client.auth.currentSession != null) {
         unawaited(_startRealtime());
@@ -1252,6 +1283,7 @@ class OrderingController extends ChangeNotifier {
           'p_latitude': customerInfo.deliveryLatitude,
           'p_longitude': customerInfo.deliveryLongitude,
           'p_items': items,
+          'p_coupon_code': couponCode.trim().isEmpty ? null : couponCode.trim().toUpperCase(),
         },
       ) as String;
 

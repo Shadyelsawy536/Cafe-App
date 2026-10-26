@@ -9,6 +9,7 @@ import '../../../../core/config/tenant_config.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../models/cafe_location.dart';
 import '../../models/product.dart';
+import '../../models/offer.dart';
 import '../../models/promotion.dart';
 import '../../models/restaurant_social_link.dart';
 import '../controllers/ordering_controller.dart';
@@ -220,6 +221,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       promotion: controller.promotion!,
                       onTap: widget.onExploreMenu,
                     ),
+                  if (controller.offers.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    Text('Special Offers', style: theme.textTheme.titleLarge),
+                    const SizedBox(height: 12),
+                    ...controller.offers.map((offer) => _OfferTile(offer: offer)),
+                  ],
                   const SizedBox(height: 32),
                   Text('Our Locations', style: theme.textTheme.titleLarge),
                   const SizedBox(height: 12),
@@ -512,5 +519,36 @@ class _FollowUsRow extends StatelessWidget {
   String _title(String platform) {
     if (platform.isEmpty) return 'Social';
     return '${platform[0].toUpperCase()}${platform.substring(1)}';
+  }
+}
+
+
+class _OfferTile extends StatelessWidget {
+  const _OfferTile({required this.offer});
+
+  final Offer offer;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: theme.colorScheme.primaryContainer,
+          child: Icon(Icons.local_offer_outlined, color: theme.colorScheme.onPrimaryContainer),
+        ),
+        title: Text(offer.name.isEmpty ? 'Special offer' : offer.name),
+        subtitle: Text(offer.scopeLabel),
+        trailing: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.secondaryContainer,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(offer.discountLabel, style: theme.textTheme.labelLarge),
+        ),
+      ),
+    );
   }
 }
