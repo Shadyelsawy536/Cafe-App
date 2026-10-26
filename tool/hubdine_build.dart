@@ -1,6 +1,6 @@
 // HubDine white-label build tool.
 //
-//   dart run tool/hubdine_build.dart <slug> [apk|appbundle|ios|run] [extra flutter args]
+//   dart run tool/hubdine_build.dart <slug> [apk|appbundle|ios|ipa|run] [extra flutter args]
 //
 // Reads config/restaurants/<slug>/restaurant.json and:
 //   1. validates it (and that the Firebase files match the app ids),
@@ -47,7 +47,7 @@ Future<void> main(List<String> args) async {
   final slug = args[0];
   final target = args.length > 1 ? args[1] : 'apk';
   final extra = args.length > 2 ? args.sublist(2) : <String>[];
-  const targets = {'apk', 'appbundle', 'ios', 'run'};
+  const targets = {'apk', 'appbundle', 'ios', 'ipa', 'run'};
   if (!targets.contains(target)) {
     _fail('Unknown target "$target". Use: ${targets.join(', ')}');
   }
@@ -94,8 +94,8 @@ Future<void> main(List<String> args) async {
   }
 
   // --- Firebase files (must match the ids, otherwise push will not work) ---
-  final needsAndroid = target != 'ios';
-  final needsIos = target == 'ios' || target == 'run';
+  final needsAndroid = target != 'ios' && target != 'ipa';
+  final needsIos = target == 'ios' || target == 'ipa' || target == 'run';
 
   final gs = File('${dir.path}/google-services.json');
   if (gs.existsSync()) {
@@ -131,6 +131,12 @@ Future<void> main(List<String> args) async {
     }
     plist.copySync('ios/Runner/GoogleService-Info.plist');
     stdout.writeln('Copied GoogleService-Info.plist');
+  } else if (target == 'ipa') {
+    _fail(
+      'Missing ${plist.path}. Refusing to build a store IPA with another '
+      'restaurant\'s Firebase options. Add this restaurant\'s '
+      'GoogleService-Info.plist with BUNDLE_ID=$iosId.',
+    );
   } else if (needsIos) {
     stdout.writeln(
       'WARNING: no GoogleService-Info.plist for $slug. iOS will fall back '
