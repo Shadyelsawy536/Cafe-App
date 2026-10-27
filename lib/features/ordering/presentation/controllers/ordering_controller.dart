@@ -1210,30 +1210,28 @@ class OrderingController extends ChangeNotifier {
       final userId =
           _client.auth.currentUser?.id;
 
-      if (userId == null) {
-        throw Exception(
-          'You must be signed in to place an order.',
-        );
+      String? customerId;
+      if (userId != null) {
+        final customerRow = await _client
+            .from('customers')
+            .upsert(
+          {
+            'restaurant_id': TenantConfig.restaurantId,
+            'user_id': userId,
+            'full_name': customerInfo.name,
+            'phone': customerInfo.phone,
+          },
+          onConflict: 'restaurant_id,user_id',
+        )
+            .select('id')
+            .single();
+        customerId = customerRow['id'] as String;
       }
 
-      final customerRow =
-          await _client
-              .from('customers')
-              .upsert(
-        {
-          'restaurant_id':
-              TenantConfig.restaurantId,
-          'user_id': userId,
-          'full_name': customerInfo.name,
-          'phone': customerInfo.phone,
-        },
-        onConflict: 'restaurant_id,user_id',
-      )
-              .select('id')
-              .single();
-
-      final customerId =
-          customerRow['id'] as String;
+      // Keep a local snapshot for the guest receipt because guest orders are
+      // intentionally not readable through the normal customer RLS policy.
+      final checkoutItems = List<CartItem>.from(cart);
+      final checkoutTotals = cartTotals;
 
       final items = cart
           .map(
@@ -1287,21 +1285,34 @@ class OrderingController extends ChangeNotifier {
         },
       ) as String;
 
-      try {
-        await _client.rpc(
-          'set_customer_order_source',
-          params: {
-            'p_order_id': orderId,
-            'p_order_source': 'app',
-          },
-        );
-      } catch (error) {
-        debugPrint('Order created, but source tagging did not complete: $error');
+      if (userId != null) {
+        try {
+          await _client.rpc(
+            'set_customer_order_source',
+            params: {
+              'p_order_id': orderId,
+              'p_order_source': 'app',
+            },
+          );
+        } catch (error) {
+          debugPrint('Order created, but source tagging did not complete: $error');
+        }
       }
 
-      final order = await _fetchOrderById(
-        orderId,
-      );
+      final Order order;
+      if (userId != null) {
+        order = await _fetchOrderById(orderId);
+      } else {
+        order = Order(
+          id: orderId,
+          items: checkoutItems,
+          totals: checkoutTotals,
+          customer: customerInfo,
+          placedAt: DateTime.now(),
+          status: OrderStatus.pending,
+          statusHistory: const [],
+        );
+      }
 
       orderHistory.insert(
         0,
