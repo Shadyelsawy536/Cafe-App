@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../../auth/presentation/controllers/auth_controller.dart';
-import '../../../auth/presentation/screens/login_screen.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/tax_formatter.dart';
 import '../controllers/ordering_controller.dart';
@@ -50,12 +48,9 @@ class CartScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _goToCheckout(BuildContext context) async {
-    final auth = context.read<AuthController>();
-    if (!auth.isSignedIn) {
-      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
-      if (!auth.isSignedIn) return;
-    }
-    if (context.mounted) Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CheckoutDetailsScreen()));
+  void _goToCheckout(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const CheckoutDetailsScreen()),
+    );
   }
 }
